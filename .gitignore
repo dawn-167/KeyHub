@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Build
+*.o
+*.swiftmodule
+*.swiftdoc
+*.app.dSYM
+
+# KeyRef specific
+KeyRef.app/Contents/MacOS/KeyRef
+*.dSYM/
