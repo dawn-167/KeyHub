@@ -4,6 +4,10 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<data>
+		xbvCgNCEeUR/MQeJQrodr+2qNqo=
+		</data>
 		<key>Resources/guides/ltspice.md</key>
 		<data>
 		gozE+to0fGZeuRfE6RaKdA6mX7U=
@@ -11,6 +15,13 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			I6eXyxIgX1RmZ44Nbs2b1aN1P0D+DRebaRkLiT3LvtU=
+			</data>
+		</dict>
 		<key>Resources/guides/ltspice.md</key>
 		<dict>
 			<key>hash2</key>

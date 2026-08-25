@@ -481,6 +481,113 @@
   2. 移除 contentStack 的最大宽度 766pt 约束，恢复 leading/trailing 满宽约束
 - **验证**: 1400 宽窗口时卡片约 430pt，填满页面宽度，边距 16pt，字体同步放大
 
+### ISSUE-052: 快捷键卡片去掉手型光标
+- **日期**: 2026-08-24
+- **现象**: 快捷键卡片鼠标悬停时显示手型光标，让用户以为可以点击，但快捷键没有点击功能
+- **修复**: ComponentCardView 添加 isCommand 属性，resetCursorRects 中只有 isCommand（SPICE 指令）才添加手型光标，快捷键用默认箭头光标
+- **验证**: 快捷键卡片悬停显示箭头光标，SPICE 指令卡片悬停显示手型光标
+
+### ISSUE-053: SPICE 指令标签一直高亮
+- **日期**: 2026-08-24
+- **现象**: SPICE 指令很重要，需要上面菜单栏的"SPICE 指令"标签一直高亮以突出显示（不是分类下的卡片）
+- **修复**:
+  1. SectionTabView 添加 alwaysHighlightTitles 属性（Set<String>）
+  2. updateSelection 中，对于 alwaysHighlightTitles 中的标签，即使未选中也保持高亮样式（蓝色加粗）
+  3. 创建 SectionTabView 时设置 alwaysHighlightTitles = ["SPICE 指令"]
+  4. 撤销之前对 ComponentCardView 的 SPICE 指令卡片一直发光的修改
+- **验证**: "SPICE 指令"标签始终保持蓝色加粗高亮，其他未选中标签为灰色
+
+### ISSUE-054: 所有卡片增强悬浮立体感
+- **日期**: 2026-08-24
+- **现象**: 卡片立体感不够强，希望更悬浮
+- **修复**:
+  1. 圆角从 12pt 增大到 16pt
+  2. 阴影半径从 4pt 增大到 8pt
+  3. 阴影偏移从 (0, -1) 增大到 (0, -3)
+  4. 阴影不透明度从 0.1 增大到 0.15
+  5. 渐变背景不透明度从 0.75/0.55 增大到 0.85/0.65
+  6. 发光状态阴影半径增大到 12pt，偏移 (0, -4)
+- **验证**: 卡片悬浮感更强，阴影更明显，圆角更大
+
+### ISSUE-055: 卡片悬停时上浮动画+四周蓝色光芒
+- **日期**: 2026-08-24
+- **现象**: 鼠标放到卡片上，卡片需要动起来（悬浮），和其他卡片不一样，四周散发光芒
+- **问题排查**: 全局 mouseMoved 事件持续触发 applyHoverState，每次都开始新动画导致动画被打断，看起来没效果
+- **修复**:
+  1. 添加 isHovered 状态变量，只有状态变化时才执行动画（if isHovered == active { return }）
+  2. 用 CATransaction 实现 CALayer 属性动画，duration=0.3s，easeOut 缓动
+  3. 悬停时上浮 8pt（CATransform3DMakeTranslation(0, -8, 0)）
+  4. 四周蓝色光芒：shadowOffset=(0,0)，shadowRadius=24，shadowOpacity=0.9，shadowColor=controlAccentColor 0.7
+  5. 边框加粗到 2pt，颜色 controlAccentColor 0.8
+  6. 渐变背景不透明度增强到 0.35/0.15
+  7. 非悬停状态减弱：shadowRadius=6，shadowOpacity=0.12，shadowOffset=(0,-2)
+  8. init 中默认阴影与非悬停状态一致
+- **验证**: 临时自动悬停第一个卡片截图验证，卡片明显更亮、更蓝、边框更粗、四周有蓝色光芒；实际鼠标悬停时能看到平滑上浮 8pt 动画
+
+### ISSUE-056: 菜单栏选中标签更突出
+- **日期**: 2026-08-24
+- **现象**: 被选择的菜单需要更突出
+- **修复**:
+  1. 选中标签：layer.backgroundColor = controlAccentColor 0.85（蓝色背景），contentTintColor = .white（白色文字），cornerRadius=6
+  2. 选中标签发光：shadowColor=controlAccentColor 0.5，shadowRadius=8，shadowOpacity=0.6
+  3. 常亮标签（SPICE 指令）：蓝色加粗文字，无背景，和选中标签区分开
+  4. 未选中标签：灰色文字，无背景
+- **验证**: 选中标签蓝色背景+白色文字+发光，非常突出；常亮标签蓝色加粗文字；未选中灰色文字
+
+### ISSUE-057: 卡片悬停描边发光（紧贴边框一圈光晕）
+- **日期**: 2026-08-25
+- **现象**: 鼠标放到卡片上，需要像输入框聚焦那样"紧贴边框一圈光晕"（参考图：明显描边 + 外面淡淡光晕向外扩散）
+- **问题排查**:
+  1. 之前已创建 glowLayers（多层 border 光环叠加），但初始 opacity=0 隐藏
+  2. applyHoverState 中渐变背景太蓝，掩盖了光晕效果
+  3. layer.shadowRadius=28 大扩散阴影与光晕效果冲突
+- **修复**:
+  1. 悬停时渐变背景保持浅色（0.9/0.75），不掩盖光晕
+  2. 移除大扩散阴影，只保留轻微阴影（shadowRadius=6, offset=(0,-2)）
+  3. 光晕由 glowLayers 三层叠加实现：
+     - 第一层：inset=-2, width=3, alpha=0.95（紧贴边框的亮边）
+     - 第二层：inset=-8, width=6, alpha=0.40（内圈光晕）
+     - 第三层：inset=-16, width=8, alpha=0.18（外圈光晕）
+  4. layout 中 glowInsets 更新为 [-2, -8, -16]，与 glowConfigs 一致
+  5. 悬停时 glowLayers opacity=1，非悬停时 opacity=0
+  6. 边框 2pt 蓝色（controlAccentColor 0.9）
+  7. 上浮 8pt + zPosition=1（不被相邻卡片遮挡）
+  8. CATransaction 动画 0.3s easeOut，isHovered 状态检查避免重复触发
+- **验证**: 临时自动悬停第一个卡片截图验证，效果与参考图一致：背景保持浅色，紧贴边框一圈蓝色描边，外面淡淡光晕向外扩散
+
+### ISSUE-058: 滚轮滚动点亮多个框框
+- **日期**: 2026-08-25
+- **现象**: 鼠标放在UI界面，滚轮一滚就会点亮多个框框（和快速滑动bug类似）
+- **根本原因**: Timer 默认添加到 default runloop mode，滚轮滚动时 runloop 切换到 event tracking mode，Timer 不触发，导致 updateAllCardHoverStates 不被调用，悬停状态没有被更新
+- **修复**:
+  1. 全局监听器添加 .scrollWheel 事件（但可能不可靠）
+  2. 添加 scrollView.contentView 的 boundsDidChangeNotification 观察者（但仍不可靠）
+  3. **最终方案**：添加 Timer 每 80ms 定期调用 updateAllCardHoverStates()
+  4. **关键修复**：Timer 必须添加到 common runloop mode（RunLoop.main.add(timer, forMode: .common)），否则滚轮滚动时（event tracking mode）Timer 不触发
+  5. applyHoverState 有 isHovered 状态检查，状态未变化时直接返回，性能影响可忽略
+- **验证**: 代码逻辑正确，Timer 添加到 common mode 后，滚轮滚动时也会触发，每 80ms 重新计算所有卡片的屏幕坐标，调用 applyHoverState 更新悬停状态
+
+### ISSUE-059: 取消快捷键描边发光，只保留SPICE指令
+- **日期**: 2026-08-25
+- **现象**: 所有卡片（快捷键和SPICE指令）悬停时都有描边发光效果，用户希望只有SPICE指令有
+- **修复**: applyHoverState 中添加 isCommand 判断，只有 SPICE 指令才显示 glowLayers（glowLayers.forEach { $0.opacity = 1 }），快捷键卡片只保留背景/边框变化
+- **验证**: 快捷键卡片悬停时只有蓝色边框，无描边发光；SPICE指令卡片悬停时有描边发光
+
+### ISSUE-060: 紧贴边框亮边太粗
+- **日期**: 2026-08-25
+- **现象**: 紧贴边框的亮边（glowLayers第一层）太粗
+- **修复**: glowConfigs 第一层 width 从 3 改为 1.5
+- **验证**: 亮边变细，更精致
+
+### ISSUE-061: 内圈和外圈光晕太大，缩小3/4
+- **日期**: 2026-08-25
+- **现象**: 内圈光晕和外圈光晕太大
+- **修复**:
+  1. 第二层（内圈光晕）：inset -8→-3, width 6→1.5（缩小3/4）
+  2. 第三层（外圈光晕）：inset -16→-5, width 8→2（缩小3/4）
+  3. layout 中 glowInsets 更新为 [-2, -3, -5]
+- **验证**: 光晕扩散范围从16pt缩小到5pt，更精致
+
 ---
 
 ## 进行中 🟡

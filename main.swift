@@ -1,6 +1,23 @@
 import Cocoa
 import Carbon.HIToolbox
 
+// MARK: - 辅助函数
+
+/// 阶梯式字体大小：只在固定值间跳变，避免非Retina屏连续字号渲染模糊
+private func steppedSize(_ w: CGFloat, _ minSize: CGFloat, _ maxSize: CGFloat) -> CGFloat {
+    let step: CGFloat = 4  // 每4pt跳一档，档位少渲染稳定
+    let ratio = max(0, min(1, (w - 100) / 200))
+    let continuous = minSize + ratio * (maxSize - minSize)
+    let stepped = floor(continuous / step) * step
+    return max(minSize, min(maxSize, stepped))
+}
+
+/// 取整到最近的偶数，避免非Retina屏子像素渲染模糊
+private func roundToEven(_ value: CGFloat) -> CGFloat {
+    let rounded = round(value)
+    return rounded.truncatingRemainder(dividingBy: 2) == 0 ? rounded : rounded + 1
+}
+
 // MARK: - 全局热键（⌃⌥L）
 
 private let kHotKeyCode: UInt32 = UInt32(kVK_ANSI_L)
@@ -215,14 +232,50 @@ enum GuideParser {
 final class KeycapView: NSView {
     private let label = NSTextField(labelWithString: "")
     private var currentFontSize: CGFloat = 15
+    private var gradientLayer: CAGradientLayer!
+    private var topHighlight: CALayer!
+    private var bottomShadow: CALayer!
 
     init(key: String) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
         layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
-        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.6).cgColor
+        layer?.masksToBounds = false
+        // 外阴影：轻微投影，增加立体感
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        layer?.shadowOffset = NSSize(width: 0, height: -1)
+        layer?.shadowRadius = 2
+        layer?.shadowOpacity = 1
+
+        // 渐变背景：顶亮底暗，模拟凸起
+        let grad = CAGradientLayer()
+        grad.cornerRadius = 6
+        grad.colors = [
+            NSColor(white: 0.97, alpha: 1.0).cgColor,
+            NSColor(white: 0.86, alpha: 1.0).cgColor
+        ]
+        grad.startPoint = CGPoint(x: 0, y: 0)
+        grad.endPoint = CGPoint(x: 0, y: 1)
+        layer?.insertSublayer(grad, at: 0)
+        gradientLayer = grad
+
+        // 顶部高光线：1px 白色半透明
+        let top = CALayer()
+        top.backgroundColor = NSColor.white.withAlphaComponent(0.65).cgColor
+        top.cornerRadius = 6
+        top.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        layer?.insertSublayer(top, above: grad)
+        topHighlight = top
+
+        // 底部阴影线：1px 深灰半透明
+        let bottom = CALayer()
+        bottom.backgroundColor = NSColor.black.withAlphaComponent(0.10).cgColor
+        bottom.cornerRadius = 6
+        bottom.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer?.insertSublayer(bottom, above: grad)
+        bottomShadow = bottom
 
         label.stringValue = key
         label.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
@@ -240,6 +293,15 @@ final class KeycapView: NSView {
             label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 10),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
         ])
+    }
+
+    override func layout() {
+        super.layout()
+        gradientLayer?.frame = bounds
+        // 顶部高光线：高度1px，在顶部
+        topHighlight?.frame = NSRect(x: 0.5, y: bounds.height - 1.5, width: bounds.width - 1, height: 1.5)
+        // 底部阴影线：高度1px，在底部
+        bottomShadow?.frame = NSRect(x: 0.5, y: 0, width: bounds.width - 1, height: 1.5)
     }
 
     func setFontSize(_ size: CGFloat) {
@@ -410,8 +472,11 @@ final class ShortcutCardView: NSView {
 
 final class CalloutView: NSView {
     enum Kind { case warning, info, note }
+    private let label: NSTextField
+    private var lastWidth: CGFloat = 0
 
     init(text: String, kind: Kind = .note) {
+        label = NSTextField(wrappingLabelWithString: text)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
@@ -433,7 +498,6 @@ final class CalloutView: NSView {
         bar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bar)
 
-        let label = NSTextField(wrappingLabelWithString: text)
         label.font = NSFont.systemFont(ofSize: 11.5, weight: .regular)
         label.textColor = .labelColor
         label.lineBreakMode = .byWordWrapping
@@ -451,6 +515,17 @@ final class CalloutView: NSView {
             label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
+    }
+
+    override func layout() {
+        super.layout()
+        let w = bounds.width
+        if w > 0 && abs(w - lastWidth) > 1 {
+            lastWidth = w
+            // 字体随宽度动态缩放（基准宽度600pt，基准字号11.5pt）
+            let fontSize = max(10, min(16, w * 0.019))
+            label.font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -476,6 +551,7 @@ final class HandCursorButton: NSButton {
 final class SectionTabView: NSView {
     private var buttons: [NSButton] = []
     var onSelect: ((Int) -> Void)?
+    var alwaysHighlightTitles: Set<String> = []
     var selectedIndex: Int = 0 {
         didSet { updateSelection() }
     }
@@ -506,12 +582,34 @@ final class SectionTabView: NSView {
 
     func updateSelection() {
         for (i, btn) in buttons.enumerated() {
-            if i == selectedIndex {
+            let isSelected = i == selectedIndex
+            let isAlwaysHighlight = alwaysHighlightTitles.contains(btn.title)
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 6
+            btn.layer?.masksToBounds = false
+            if isSelected {
+                // 选中标签：蓝色背景+白色文字+发光
+                btn.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
+                btn.contentTintColor = .white
+                btn.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+                btn.layer?.shadowColor = NSColor.controlAccentColor.withAlphaComponent(0.5).cgColor
+                btn.layer?.shadowRadius = 8
+                btn.layer?.shadowOffset = NSSize(width: 0, height: 0)
+                btn.layer?.shadowOpacity = 0.6
+            } else if isAlwaysHighlight {
+                // 常亮标签：蓝色加粗文字，无背景
+                btn.layer?.backgroundColor = NSColor.clear.cgColor
                 btn.contentTintColor = .controlAccentColor
                 btn.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+                btn.layer?.shadowColor = NSColor.clear.cgColor
+                btn.layer?.shadowOpacity = 0
             } else {
+                // 未选中标签：灰色文字
+                btn.layer?.backgroundColor = NSColor.clear.cgColor
                 btn.contentTintColor = .secondaryLabelColor
                 btn.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+                btn.layer?.shadowColor = NSColor.clear.cgColor
+                btn.layer?.shadowOpacity = 0
             }
         }
     }
@@ -562,129 +660,295 @@ final class SectionTabView: NSView {
 final class ComponentCardView: NSView {
     private var trackingArea: NSTrackingArea?
     private var gradientLayer: CAGradientLayer?
+    private var highlightLayer: CALayer?
+    private var bottomShadowLayer: CALayer?
     private let keyRow = NSStackView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let enLabel = NSTextField(labelWithString: "")
-    private var lastFontSize: CGFloat = 0
+    private let isCommand: Bool
+    private var isHovered = false
+    private var glowLayers: [CALayer] = []
     var onClick: (() -> Void)?
+    let item: ShortcutItem
 
     init(item: ShortcutItem) {
+        self.item = item
+        isCommand = item.combos.first?.first?.hasPrefix(".") == true
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = 14
         layer?.masksToBounds = false
         layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
-        layer?.shadowColor = NSColor.black.withAlphaComponent(0.1).cgColor
-        layer?.shadowOffset = NSSize(width: 0, height: -1)
-        layer?.shadowRadius = 4
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.30).cgColor
+        layer?.shadowOffset = NSSize(width: 0, height: -6)
+        layer?.shadowRadius = 16
         layer?.shadowOpacity = 1
 
         // 点击手势
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
         addGestureRecognizer(click)
 
-        // 渐变背景
+        // 渐变背景（不透明，顶亮底暗柔和过渡，避免整页上亮下暗）
         let grad = CAGradientLayer()
-        grad.cornerRadius = 12
-        grad.colors = [
-            NSColor.controlBackgroundColor.withAlphaComponent(0.75).cgColor,
-            NSColor.controlBackgroundColor.withAlphaComponent(0.55).cgColor
-        ]
+        grad.cornerRadius = 14
+        let cardBg = NSColor(white: 0.98, alpha: 1.0)
+        let cardBg2 = NSColor(white: 0.91, alpha: 1.0)
+        grad.colors = [cardBg.cgColor, cardBg2.cgColor]
         grad.startPoint = CGPoint(x: 0, y: 0)
         grad.endPoint = CGPoint(x: 0, y: 1)
         layer?.insertSublayer(grad, at: 0)
         gradientLayer = grad
 
+        // 顶部高光线（增强立体感，更明显）
+        let hl = CALayer()
+        hl.backgroundColor = NSColor.white.withAlphaComponent(0.65).cgColor
+        hl.cornerRadius = 14
+        hl.masksToBounds = true
+        layer?.insertSublayer(hl, above: grad)
+        highlightLayer = hl
+
+        // 底部阴影线（增强立体感，更明显）
+        let bs = CALayer()
+        bs.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        bs.cornerRadius = 14
+        bs.masksToBounds = true
+        layer?.insertSublayer(bs, above: grad)
+        bottomShadowLayer = bs
+
+        // SPICE指令描边发光层
+        let glowConfigs: [(inset: CGFloat, width: CGFloat, alpha: CGFloat)] = [
+            (inset: -1,  width: 0.6, alpha: 0.90),
+            (inset: -4,  width: 3,   alpha: 0.15),
+        ]
+        for cfg in glowConfigs {
+            let glow = CALayer()
+            glow.frame = bounds.insetBy(dx: cfg.inset, dy: cfg.inset)
+            glow.cornerRadius = 14 - cfg.inset
+            glow.borderWidth = cfg.width
+            glow.borderColor = NSColor.controlAccentColor.withAlphaComponent(cfg.alpha).cgColor
+            glow.opacity = 0
+            layer?.insertSublayer(glow, at: 1)
+            glowLayers.append(glow)
+        }
+
         // 解析功能描述：中文名（英文名）
+        // 注意：SPICE指令可能有两个括号，如"小信号交流分析（频响）（.AC dec 100 1Hz 100MEG）"
+        // 用lastIndex取最后一个括号作为enName（语法示例）
         let desc = item.desc
         var cnName = desc
         var enName = ""
-        if let lp = desc.firstIndex(of: "（"), let rp = desc.firstIndex(of: "）") {
+        if let lp = desc.lastIndex(of: "（"), let rp = desc.lastIndex(of: "）"), lp < rp {
             cnName = String(desc[..<lp]).trimmingCharacters(in: .whitespaces)
             enName = String(desc[desc.index(after: lp)..<rp]).trimmingCharacters(in: .whitespaces)
         }
+
+        // 动态字体大小：字少的放大，字多的保持，特别长的缩小（确保显示全）
+        let comboCount = item.combos.first?.count ?? 0
+        let baseKeycap: CGFloat = isCommand ? 16 : 20
+        let baseName: CGFloat = isCommand ? 14 : 18
+        let baseEn: CGFloat = isCommand ? 12 : 14
+        let basePlus: CGFloat = isCommand ? 12 : 16
+        var keycapSize = baseKeycap
+        var nameSize = baseName
+        var enSize = baseEn
+        var plusSize = basePlus
+        // 根据内容长度调整字体（组合键>=2的不放大，只缩小，确保键帽不被截断）
+        if comboCount < 2 && cnName.count <= 2 && comboCount <= 1 && enName.count <= 10 {
+            // 很短，放大2号
+            keycapSize += 4
+            nameSize += 4
+            enSize += 2
+            plusSize += 2
+        } else if comboCount < 2 && cnName.count <= 4 && comboCount <= 2 && enName.count <= 20 {
+            // 中等，放大1号
+            keycapSize += 2
+            nameSize += 2
+            enSize += 1
+            plusSize += 1
+        } else if enName.count > 40 || cnName.count > 10 {
+            // 特别长，缩小2号确保显示全
+            keycapSize -= 2
+            nameSize -= 2
+            enSize -= 1
+            plusSize -= 1
+        } else if enName.count > 10 || cnName.count > 8 {
+            // 较长（11-40字符），缩小1号确保在正方形中显示全
+            keycapSize -= 1
+            nameSize -= 1
+            enSize -= 1
+            plusSize -= 1
+        }
+
+        // 组合键多的，额外缩小键帽字体确保不被截断
+        if comboCount >= 3 {
+            keycapSize -= 3
+            plusSize -= 2
+        } else if comboCount >= 2 {
+            keycapSize -= 2
+            plusSize -= 1
+        }
+        // 确保键帽字体不小于10
+        keycapSize = max(keycapSize, 10)
+        plusSize = max(plusSize, 10)
 
         // 键帽（支持组合键，多个键帽并排）
         keyRow.orientation = .horizontal
         keyRow.alignment = .centerY
         keyRow.spacing = 2
         keyRow.translatesAutoresizingMaskIntoConstraints = false
-
         if let combo = item.combos.first {
             for (ki, key) in combo.enumerated() {
                 if ki > 0 {
                     let plus = NSTextField(labelWithString: "+")
-                    plus.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+                    plus.font = NSFont.systemFont(ofSize: plusSize, weight: .semibold)
                     plus.textColor = .secondaryLabelColor
+                    plus.isBezeled = false
+                    plus.isBordered = false
+                    plus.drawsBackground = false
                     keyRow.addArrangedSubview(plus)
                 }
                 let keycap = KeycapView(key: key)
                 keycap.translatesAutoresizingMaskIntoConstraints = false
+                keycap.setFontSize(keycapSize)
                 keyRow.addArrangedSubview(keycap)
             }
         }
 
         // 功能名
         nameLabel.stringValue = cnName
-        nameLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        nameLabel.font = NSFont.systemFont(ofSize: nameSize, weight: .semibold)
         nameLabel.textColor = .labelColor
         nameLabel.alignment = .center
         nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.maximumNumberOfLines = 2
+        nameLabel.maximumNumberOfLines = 3
+        nameLabel.isBezeled = false
+        nameLabel.isBordered = false
+        nameLabel.drawsBackground = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // 英文名（可选）
         enLabel.stringValue = enName
-        enLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        enLabel.textColor = .tertiaryLabelColor
+        enLabel.font = NSFont.systemFont(ofSize: enSize, weight: .regular)
+        enLabel.textColor = .secondaryLabelColor
         enLabel.alignment = .center
         enLabel.lineBreakMode = .byTruncatingTail
-        enLabel.maximumNumberOfLines = 1
+        enLabel.maximumNumberOfLines = 5
         enLabel.isHidden = enName.isEmpty
-        enLabel.translatesAutoresizingMaskIntoConstraints = false
+        enLabel.isBezeled = false
+        enLabel.isBordered = false
+        enLabel.drawsBackground = false
+        enLabel.translatesAutoresizingMaskIntoConstraints = true
 
-        let vStack = NSStackView(views: [keyRow, nameLabel, enLabel])
-        vStack.orientation = .vertical
-        vStack.alignment = .centerX
-        vStack.spacing = 8
-        vStack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(vStack)
-
-        NSLayoutConstraint.activate([
-            vStack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            vStack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            vStack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
-            vStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-        ])
+        // 手动布局：确保所有元素位置都是整数像素，避免子像素渲染模糊
+        addSubview(keyRow)
+        addSubview(nameLabel)
+        addSubview(enLabel)
     }
 
     override func layout() {
         super.layout()
+        updateLayerContentsScale()
         gradientLayer?.frame = bounds
-        // 字体随卡片宽度自适应
-        let w = bounds.width
-        if w > 0 && abs(w - lastFontSize) > 1 {
-            lastFontSize = w
-            let keycapSize = max(12, min(32, w * 0.085))
-            let nameSize = max(11, min(26, w * 0.075))
-            let enSize = max(9, min(20, w * 0.06))
-            let plusSize = max(10, min(24, w * 0.065))
-            nameLabel.font = NSFont.systemFont(ofSize: nameSize, weight: .semibold)
-            enLabel.font = NSFont.systemFont(ofSize: enSize, weight: .regular)
-            for sub in keyRow.arrangedSubviews {
-                if let tf = sub as? NSTextField {
-                    tf.font = NSFont.systemFont(ofSize: plusSize, weight: .semibold)
-                } else if let kc = sub as? KeycapView {
-                    kc.setFontSize(keycapSize)
-                }
-            }
+        // 顶部高光线：1.5px，在顶部
+        highlightLayer?.frame = NSRect(x: 0.5, y: bounds.height - 2, width: bounds.width - 1, height: 2)
+        // 底部阴影线：1.5px，在底部
+        bottomShadowLayer?.frame = NSRect(x: 0.5, y: 0, width: bounds.width - 1, height: 2)
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 14, cornerHeight: 14, transform: nil)
+        // 辉光层跟随卡片尺寸
+        let baseWidth: CGFloat = 200
+        let scale = max(0.5, min(2.0, bounds.width / baseWidth))
+        let glowWidths: [CGFloat] = [0.6 * scale, 3 * scale]
+        let glowInsets: [CGFloat] = [-1 * scale, -4 * scale]
+        for (i, glow) in glowLayers.enumerated() where i < glowInsets.count {
+            let inset = glowInsets[i]
+            glow.frame = bounds.insetBy(dx: inset, dy: inset)
+            glow.cornerRadius = 14 - inset
+            glow.borderWidth = glowWidths[i]
+        }
+        // 字体大小固定（27寸副屏最清晰的大小），不随卡片大小变化
+        // 手动布局：确保每个元素位置都是整数像素，避免子像素渲染模糊
+        let cardW = bounds.width
+        let cardH = bounds.height
+        let spacing: CGFloat = 10
+        // 计算各元素大小（取整）
+        keyRow.layoutSubtreeIfNeeded()
+        let keyRowSize = keyRow.fittingSize
+        let keyRowW = round(min(keyRowSize.width, cardW - 24))
+        let keyRowH = round(keyRowSize.height)
+        let nameSize = nameLabel.sizeThatFits(NSSize(width: cardW - 24, height: .greatestFiniteMagnitude))
+        let nameW = cardW - 24
+        let nameH = round(nameSize.height)
+        var enH: CGFloat = 0
+        if !enLabel.isHidden {
+            let enSize = enLabel.sizeThatFits(NSSize(width: cardW - 24, height: .greatestFiniteMagnitude))
+            enH = round(enSize.height)
+        }
+        // 总高度
+        let totalH = keyRowH + spacing + nameH + (enH > 0 ? spacing + enH : 0)
+        // 从顶部开始布局（而不是居中），确保内容多的时候底部元素不会被裁剪
+        // 如果内容能放下则居中，放不下则从顶部开始
+        let topMargin: CGFloat = 8
+        var curY: CGFloat
+        if totalH <= cardH - topMargin * 2 {
+            // 内容能放下，居中
+            curY = round((cardH + totalH) / 2)
+        } else {
+            // 内容放不下，从顶部开始
+            curY = cardH - topMargin
+        }
+        // keyRow（最顶部）
+        curY -= keyRowH
+        keyRow.frame = NSRect(x: round((cardW - keyRowW) / 2), y: curY, width: keyRowW, height: keyRowH)
+        keyRow.layoutSubtreeIfNeeded()
+        curY -= spacing
+        // nameLabel（中间）
+        curY -= nameH
+        nameLabel.frame = NSRect(x: round((cardW - nameW) / 2), y: curY, width: nameW, height: nameH)
+        curY -= spacing
+        // enLabel（最底部）
+        if enH > 0 {
+            curY -= enH
+            enLabel.frame = NSRect(x: round((cardW - nameW) / 2), y: curY, width: nameW, height: enH)
+        }
+        // 所有子视图frame取整对齐像素网格（递归，包括keyRow内部的键帽）
+        alignSubviewsToPixels(self)
+    }
+
+    private func alignSubviewsToPixels(_ view: NSView) {
+        for sub in view.subviews {
+            var f = sub.frame
+            f.origin.x = round(f.origin.x)
+            f.origin.y = round(f.origin.y)
+            f.size.width = round(f.size.width)
+            f.size.height = round(f.size.height)
+            sub.frame = f
+            alignSubviewsToPixels(sub)
         }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTrackingAreas()
+        updateLayerContentsScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerContentsScale()
+    }
+
+    private func updateLayerContentsScale() {
+        guard let scale = window?.backingScaleFactor else { return }
+        layer?.contentsScale = scale
+        gradientLayer?.contentsScale = scale
+        highlightLayer?.contentsScale = scale
+        bottomShadowLayer?.contentsScale = scale
+        glowLayers.forEach { $0.contentsScale = scale }
+        // 边框宽度根据屏幕scale调整，确保物理像素为整数
+        let pixelBorder = 1.0 / scale
+        layer?.borderWidth = pixelBorder
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -697,34 +961,56 @@ final class ComponentCardView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        // 悬停状态由全局 mouseMoved 监听器统一处理
+        // trackingArea 使用 .activeAlways：App 失活（浮动窗口叠在其他应用上）时也能收到 enter/exit
+        applyHoverState(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        // 悬停状态由全局 mouseMoved 监听器统一处理
+        applyHoverState(false)
     }
 
-    // 全局悬停状态控制（防止快速滑动时 mouseExited 丢失）
+    // 全局悬停状态控制：快捷键不变色，SPICE指令保留变色
     func applyHoverState(_ active: Bool) {
+        if isHovered == active { return }
+        isHovered = active
+        // 快捷键卡片悬停时不变色，直接返回
+        if !isCommand { return }
+        // SPICE指令卡片悬停时变色
+        layer?.removeAllAnimations()
+        gradientLayer?.removeAllAnimations()
+        glowLayers.forEach { $0.removeAllAnimations() }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         if active {
+            layer?.transform = CATransform3DMakeTranslation(0, 8, 0)
+            layer?.zPosition = 1
+            glowLayers.forEach { $0.opacity = 1 }
+            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.9).cgColor
+            layer?.borderWidth = 1
             gradientLayer?.colors = [
-                NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor,
-                NSColor.controlAccentColor.withAlphaComponent(0.06).cgColor
+                NSColor.controlBackgroundColor.withAlphaComponent(1.0).cgColor,
+                NSColor.controlBackgroundColor.withAlphaComponent(0.95).cgColor
             ]
-            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.4).cgColor
-            layer?.shadowColor = NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor
-            layer?.shadowRadius = 10
-            layer?.shadowOffset = NSSize(width: 0, height: -3)
+            layer?.shadowColor = NSColor.black.withAlphaComponent(0.25).cgColor
+            layer?.shadowRadius = 14
+            layer?.shadowOffset = NSSize(width: 0, height: -5)
+            layer?.shadowOpacity = 1
         } else {
+            layer?.transform = CATransform3DIdentity
+            layer?.zPosition = 0
+            glowLayers.forEach { $0.opacity = 0 }
             gradientLayer?.colors = [
-                NSColor.controlBackgroundColor.withAlphaComponent(0.75).cgColor,
-                NSColor.controlBackgroundColor.withAlphaComponent(0.55).cgColor
+                NSColor(white: 0.98, alpha: 1.0).cgColor,
+                NSColor(white: 0.91, alpha: 1.0).cgColor
             ]
-            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
-            layer?.shadowColor = NSColor.black.withAlphaComponent(0.1).cgColor
-            layer?.shadowRadius = 4
-            layer?.shadowOffset = NSSize(width: 0, height: -1)
+            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
+            layer?.borderWidth = 0.5
+            layer?.shadowColor = NSColor.black.withAlphaComponent(0.30).cgColor
+            layer?.shadowRadius = 16
+            layer?.shadowOffset = NSSize(width: 0, height: -6)
+            layer?.shadowOpacity = 1
         }
+        CATransaction.commit()
     }
 
     @objc private func handleClick() {
@@ -733,7 +1019,9 @@ final class ComponentCardView: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
+        if isCommand {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
     }
 }
 
@@ -764,7 +1052,13 @@ final class ComponentGridView: NSView {
             }
             addSubview(card)
             cardViews.append(card)
-            let searchText = (item.combos.first?.first ?? "") + " " + item.desc
+        }
+    }
+
+    // 在 onCardAdded 回调设置完成后调用，确保卡片能被正确注册
+    func notifyCardsAdded() {
+        for card in cardViews {
+            let searchText = (card.item.combos.first?.first ?? "") + " " + card.item.desc
             onCardAdded?(card, sectionIndex, searchText.lowercased())
         }
     }
@@ -775,22 +1069,84 @@ final class ComponentGridView: NSView {
         max((width - CGFloat(cols - 1) * spacing) / CGFloat(cols), 80)
     }
 
+    // 判断卡片是否需要跨两列（长内容）
+    private func shouldSpan(_ card: ComponentCardView) -> Bool {
+        let desc = card.item.desc
+        // 提取中文名和英文名（用lastIndex，SPICE指令可能有两个括号）
+        var cnName = desc
+        var enName = ""
+        if let lp = desc.lastIndex(of: "（"), let rp = desc.lastIndex(of: "）"), lp < rp {
+            cnName = String(desc[..<lp]).trimmingCharacters(in: .whitespaces)
+            enName = String(desc[desc.index(after: lp)..<rp]).trimmingCharacters(in: .whitespaces)
+        }
+        let comboCount = card.item.combos.first?.count ?? 0
+        // 阈值：包含中文的enName阈值8（中文宽度大），全英文的阈值12
+        let containsChinese = enName.range(of: "\\p{Han}", options: .regularExpression) != nil
+        let enThreshold: CGFloat = containsChinese ? 8 : 12
+        // 组合键>=2的跨列（键帽需要更多宽度）；中文名>6或英文名超阈值也跨列
+        return cnName.count > 6 || comboCount >= 2 || CGFloat(enName.count) > enThreshold
+    }
+
     override func layout() {
         super.layout()
         let w = bounds.width
         let cw = cardWidth(for: w)
+        // 只布局可见的卡片（搜索过滤后隐藏的卡片不占空间）
+        let visibleCards = cardViews.filter { !$0.isHidden }
         let totalWidth = cw * CGFloat(cols) + spacing * CGFloat(cols - 1)
         let startX = (w - totalWidth) / 2
-        let rows = ceil(CGFloat(items.count) / CGFloat(cols))
-        let totalHeight = rows * cw + (rows - 1) * spacing
-        for (i, card) in cardViews.enumerated() {
-            let row = i / cols
-            let col = i % cols
-            let x = startX + CGFloat(col) * (cw + spacing)
-            let y = (rows - 1 - CGFloat(row)) * (cw + spacing)  // Cocoa y轴从下往上
-            card.frame = NSRect(x: x, y: y, width: cw, height: cw)
-            card.updateTrackingAreas()
+
+        // 智能紧凑排列：当前行剩1列时优先从后面找普通卡片填上，不留空
+        var remaining = visibleCards
+        var rows: [(y: CGFloat, cards: [(x: CGFloat, width: CGFloat, card: ComponentCardView)])] = []
+        var currentCol = 0
+        rows.append((y: 0, cards: []))
+
+        while !remaining.isEmpty {
+            // 找第一个能放进当前行剩余空间的卡片
+            var foundIdx = -1
+            for (i, card) in remaining.enumerated() {
+                let span = shouldSpan(card) ? 2 : 1
+                if currentCol + span <= cols {
+                    foundIdx = i
+                    break
+                }
+            }
+            if foundIdx == -1 {
+                // 当前行放不下任何卡片，换行
+                currentCol = 0
+                rows.append((y: 0, cards: []))
+                continue
+            }
+            let card = remaining.remove(at: foundIdx)
+            let span = shouldSpan(card) ? 2 : 1
+            let cardX = startX + CGFloat(currentCol) * (cw + spacing)
+            let cardW = span == 2 ? (cw * 2 + spacing) : cw
+            rows[rows.count - 1].cards.append((x: cardX, width: cardW, card: card))
+            currentCol += span
         }
+
+        // 计算每行y坐标（Cocoa y轴从下往上，第一行在最下面）
+        let rowCount = rows.count
+        for (rowIdx, _) in rows.enumerated() {
+            let y = CGFloat(rowCount - 1 - rowIdx) * (cw + spacing)
+            rows[rowIdx].y = y
+        }
+
+        // 设置卡片frame
+        for row in rows {
+            for item in row.cards {
+                item.card.frame = NSRect(x: item.x, y: row.y, width: item.width, height: cw)
+                item.card.updateTrackingAreas()
+            }
+        }
+
+        // 隐藏的卡片移到视野外，避免拦截事件
+        for card in cardViews where card.isHidden {
+            card.frame = NSRect(x: -10000, y: -10000, width: cw, height: cw)
+        }
+
+        let totalHeight = CGFloat(rowCount) * cw + CGFloat(rowCount - 1) * spacing
         if heightConstraint == nil {
             heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
             heightConstraint?.isActive = true
@@ -804,6 +1160,68 @@ final class ComponentGridView: NSView {
     }
 }
 
+// MARK: - 翻转视图（NSScrollView 的 documentView 需要 flipped 坐标，否则内容从底部开始）
+
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+// MARK: - 首页软件卡片网格（3列等宽正方形，与详情页风格一致）
+
+final class HomeSoftwareGridView: NSView {
+    private let cards: [SoftwareCardView]
+    private let cols = 3
+    private let spacing: CGFloat = 12
+    private var heightConstraint: NSLayoutConstraint?
+
+    init(cards: [SoftwareCardView]) {
+        self.cards = cards
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        for card in cards {
+            card.translatesAutoresizingMaskIntoConstraints = true
+            card.autoresizingMask = []
+            addSubview(card)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func cardWidth(for width: CGFloat) -> CGFloat {
+        max((width - CGFloat(cols - 1) * spacing) / CGFloat(cols), 80)
+    }
+
+    override func layout() {
+        super.layout()
+        let w = bounds.width
+        let cw = round(cardWidth(for: w))
+        // 只布局可见的卡片（搜索过滤后隐藏的卡片不占空间）
+        let visibleCards = cards.filter { !$0.isHidden }
+        let totalWidth = cw * CGFloat(cols) + spacing * CGFloat(cols - 1)
+        let startX = round((w - totalWidth) / 2)
+        let rows = ceil(CGFloat(visibleCards.count) / CGFloat(cols))
+        let totalHeight = round(rows * cw + (rows - 1) * spacing)
+        for (i, card) in visibleCards.enumerated() {
+            let row = i / cols
+            let col = i % cols
+            let x = round(startX + CGFloat(col) * (cw + spacing))
+            let y = round((rows - 1 - CGFloat(row)) * (cw + spacing))
+            card.frame = NSRect(x: x, y: y, width: cw, height: cw)
+            card.updateTrackingAreas()
+        }
+        // 隐藏的卡片移到视野外，避免拦截事件
+        for card in cards where card.isHidden {
+            card.frame = NSRect(x: -10000, y: -10000, width: cw, height: cw)
+        }
+        if heightConstraint == nil {
+            heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
+            heightConstraint?.isActive = true
+        } else if abs(heightConstraint!.constant - totalHeight) > 1 {
+            heightConstraint?.constant = totalHeight
+        }
+    }
+}
+
 // MARK: - 软件卡片（首页用，NSButton 子类确保点击可靠 + 立体感 + 悬停）
 
 final class SoftwareCardView: NSButton {
@@ -812,6 +1230,12 @@ final class SoftwareCardView: NSButton {
     private var trackingArea: NSTrackingArea?
     private var gradientLayer: CAGradientLayer?
     private var highlightLayer: CALayer?
+    private var nameLabel: ClickThroughLabel!
+    private var infoLabel: ClickThroughLabel!
+    private var updatedLabel: ClickThroughLabel!
+    private var iconBg: NSView!
+    private var iconView: NSImageView!
+    private var lastCardWidth: CGFloat = 0
 
     convenience init(guide: SoftwareGuide) {
         self.init(guide: guide, isPlaceholder: false)
@@ -841,14 +1265,15 @@ final class SoftwareCardView: NSButton {
         action = #selector(buttonClicked)
         if isPlaceholder { isEnabled = false }
 
-        // 渐变背景层
+        // 渐变背景层（不透明，避免半透明导致字体模糊）
         let grad = CAGradientLayer()
         grad.cornerRadius = 14
+        let cardBg = NSColor(white: 0.985, alpha: 1.0)
+        let cardBg2 = NSColor(white: 0.97, alpha: 1.0)
         grad.colors = isPlaceholder
-            ? [NSColor.controlBackgroundColor.withAlphaComponent(0.5).cgColor,
-               NSColor.controlBackgroundColor.withAlphaComponent(0.3).cgColor]
-            : [NSColor.controlBackgroundColor.withAlphaComponent(0.85).cgColor,
-               NSColor.controlBackgroundColor.withAlphaComponent(0.65).cgColor]
+            ? [NSColor(white: 0.97, alpha: 1.0).cgColor,
+               NSColor(white: 0.95, alpha: 1.0).cgColor]
+            : [cardBg.cgColor, cardBg2.cgColor]
         grad.locations = [0, 1]
         grad.startPoint = CGPoint(x: 0, y: 0)
         grad.endPoint = CGPoint(x: 0, y: 1)
@@ -872,11 +1297,13 @@ final class SoftwareCardView: NSButton {
         iconBg.layer?.shadowRadius = 4
         iconBg.layer?.shadowOpacity = 1
         iconBg.translatesAutoresizingMaskIntoConstraints = false
+        self.iconBg = iconBg
 
         let iconView = NSImageView()
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconBg.addSubview(iconView)
+        self.iconView = iconView
 
         if isPlaceholder {
             iconBg.layer?.backgroundColor = NSColor.systemGray.withAlphaComponent(0.25).cgColor
@@ -897,6 +1324,7 @@ final class SoftwareCardView: NSButton {
         let nameLabel = ClickThroughLabel(labelWithString: nameText)
         nameLabel.font = NSFont.systemFont(ofSize: 16, weight: .bold)
         nameLabel.textColor = isPlaceholder ? .tertiaryLabelColor : .labelColor
+        self.nameLabel = nameLabel
 
         let infoText: String
         if isPlaceholder {
@@ -907,12 +1335,14 @@ final class SoftwareCardView: NSButton {
         let infoLabel = ClickThroughLabel(labelWithString: infoText)
         infoLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         infoLabel.textColor = .tertiaryLabelColor
+        self.infoLabel = infoLabel
 
         let updatedText = isPlaceholder ? "" : "更新于 \(guide?.lastUpdated ?? "")"
         let updatedLabel = ClickThroughLabel(labelWithString: updatedText)
         updatedLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
         updatedLabel.textColor = .tertiaryLabelColor
         updatedLabel.isHidden = isPlaceholder
+        self.updatedLabel = updatedLabel
 
         let textStack = NSStackView(views: [nameLabel, infoLabel, updatedLabel])
         textStack.orientation = .vertical
@@ -938,7 +1368,6 @@ final class SoftwareCardView: NSButton {
             hStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             hStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             hStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
-            heightAnchor.constraint(equalToConstant: 84),
         ])
     }
 
@@ -946,6 +1375,73 @@ final class SoftwareCardView: NSButton {
         super.layout()
         gradientLayer?.frame = bounds
         highlightLayer?.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+        // 字体和图标随卡片大小动态缩放
+        let w = bounds.width
+        if w > 0 && abs(w - lastCardWidth) > 1 {
+            lastCardWidth = w
+            let scale = w / 200  // 基准宽度200pt
+            let nameSize = round(max(11, min(22, 16 * scale)))
+            let infoSize = round(max(8, min(15, 11 * scale)))
+            let updatedSize = round(max(7, min(14, 10 * scale)))
+            let iconSize = round(max(28, min(64, 48 * scale)))
+            let iconInnerSize = round(max(16, min(40, 28 * scale)))
+            nameLabel?.font = NSFont.systemFont(ofSize: nameSize, weight: .bold)
+            infoLabel?.font = NSFont.systemFont(ofSize: infoSize, weight: .regular)
+            updatedLabel?.font = NSFont.systemFont(ofSize: updatedSize, weight: .regular)
+            // 更新图标大小约束
+            if let iconBg = iconBg, let iconView = iconView {
+                for c in iconBg.constraints {
+                    if c.firstAttribute == .width || c.firstAttribute == .height {
+                        c.constant = iconSize
+                    }
+                }
+                for c in iconView.constraints {
+                    if c.firstAttribute == .width || c.firstAttribute == .height {
+                        c.constant = iconInnerSize
+                    }
+                }
+            }
+        }
+        // 所有子视图frame取整对齐像素网格
+        alignSubviewsToPixels(self)
+    }
+
+    private func alignSubviewsToPixels(_ view: NSView) {
+        for sub in view.subviews {
+            var f = sub.frame
+            f.origin.x = round(f.origin.x)
+            f.origin.y = round(f.origin.y)
+            f.size.width = round(f.size.width)
+            f.size.height = round(f.size.height)
+            sub.frame = f
+            alignSubviewsToPixels(sub)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateLayerContentsScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerContentsScale()
+    }
+
+    private func updateLayerContentsScale() {
+        guard let scale = window?.backingScaleFactor else { return }
+        layer?.contentsScale = scale
+        gradientLayer?.contentsScale = scale
+        highlightLayer?.contentsScale = scale
+        // 边框宽度根据屏幕scale调整
+        let pixelBorder = 1.0 / scale
+        layer?.borderWidth = pixelBorder
+        // 非Retina屏边框颜色调深
+        if scale < 2.0 {
+            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
+        } else {
+            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -975,14 +1471,16 @@ final class SoftwareCardView: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         guard !isPlaceholder else { return }
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.animator().frame = self.frame.offsetBy(dx: 0, dy: -2)
-        }
+        // 用 layer.transform 实现上浮，不修改 frame（避免被 layout 覆盖）
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.15)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        layer?.transform = CATransform3DMakeTranslation(0, 6, 0)
+        layer?.zPosition = 1
+        CATransaction.commit()
         gradientLayer?.colors = [
-            NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor,
-            NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+            NSColor(red: 0.92, green: 0.96, blue: 1.0, alpha: 1.0).cgColor,
+            NSColor(red: 0.88, green: 0.93, blue: 1.0, alpha: 1.0).cgColor
         ]
         layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
         layer?.shadowColor = NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor
@@ -992,16 +1490,17 @@ final class SoftwareCardView: NSButton {
     }
 
     override func mouseExited(with event: NSEvent) {
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.animator().frame = self.frame.offsetBy(dx: 0, dy: 2)
-        }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.2)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        layer?.transform = CATransform3DIdentity
+        layer?.zPosition = 0
+        CATransaction.commit()
         gradientLayer?.colors = isPlaceholder
-            ? [NSColor.controlBackgroundColor.withAlphaComponent(0.5).cgColor,
-               NSColor.controlBackgroundColor.withAlphaComponent(0.3).cgColor]
-            : [NSColor.controlBackgroundColor.withAlphaComponent(0.85).cgColor,
-               NSColor.controlBackgroundColor.withAlphaComponent(0.65).cgColor]
+            ? [NSColor(white: 0.97, alpha: 1.0).cgColor,
+               NSColor(white: 0.95, alpha: 1.0).cgColor]
+            : [NSColor(white: 0.985, alpha: 1.0).cgColor,
+               NSColor(white: 0.97, alpha: 1.0).cgColor]
         layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
         layer?.shadowRadius = 10
@@ -1046,6 +1545,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sectionContainers: [NSView] = []
     private var rowRefs: [(view: NSView, sectionIndex: Int, searchText: String)] = []
     private var selectedSection: Int = -1
+    private var scrollObserver: NSObjectProtocol?
+    private var hoverUpdateTimer: Timer?
 
     private let sectionColors: [NSColor] = [
         .systemBlue, .systemPurple, .systemGreen, .systemOrange, .systemRed, .systemTeal
@@ -1060,26 +1561,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKey()
         showHome()
         showWindow()
+        // 延迟再次显示，确保窗口可见
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.showWindow()
+        }
 
-        // 全局鼠标移动监听：修复快速滑动时多个卡片被点亮无法熄灭的问题
-        NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+        // 全局鼠标移动+滚轮监听：修复快速滑动/滚轮滚动时多个卡片被点亮无法熄灭的问题
+        NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel]) { [weak self] event in
             self?.updateAllCardHoverStates()
             return event
         }
+
+        // 定期更新悬停状态（80ms），确保滚轮滚动时悬停状态正确更新
+        // 必须添加到 common runloop mode，否则滚轮滚动时（event tracking mode）Timer 不触发
+        hoverUpdateTimer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
+            self?.updateAllCardHoverStates()
+        }
+        if let timer = hoverUpdateTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
 
-    private func updateAllCardHoverStates() {
-        guard window != nil else { return }
-        let mouseScreen = NSEvent.mouseLocation
+    @objc private func updateAllCardHoverStates() {
+        guard let win = window else { return }
+        let mouseLoc = win.mouseLocationOutsideOfEventStream
         for ref in rowRefs {
             if let card = ref.view as? ComponentCardView {
-                // 用屏幕坐标判断鼠标是否在卡片内，更可靠
-                if let cardWindow = card.window {
-                    let cardFrameInWindow = card.convert(card.bounds, to: nil)
-                    let cardFrameOnScreen = cardWindow.convertToScreen(cardFrameInWindow)
-                    let mouseInCard = cardFrameOnScreen.contains(mouseScreen)
-                    card.applyHoverState(mouseInCard)
-                }
+                // 直接在窗口坐标和卡片坐标间转换，更可靠
+                let cardPoint = card.convert(mouseLoc, from: nil)
+                let mouseInCard = card.bounds.contains(cardPoint)
+                card.applyHoverState(mouseInCard)
             }
         }
     }
@@ -1129,7 +1640,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            let img = NSImage(systemSymbolName: "command", accessibilityDescription: "KeyRef 快捷键手册")
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            let img = NSImage(systemSymbolName: "book.closed", accessibilityDescription: "KeyRef 快捷键手册")?.withSymbolConfiguration(config)
             img?.isTemplate = true
             button.image = img
             button.imagePosition = .imageOnly
@@ -1165,7 +1677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: 窗口
 
     private func setupWindow() {
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 600),
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 600),
                            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                            backing: .buffered, defer: false)
         win.title = "KeyRef"
@@ -1178,7 +1690,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.level = .floating
         win.isReleasedWhenClosed = false
         win.acceptsMouseMovedEvents = true
+        // 宽度固定480，高度可纵向拉升（400 ~ 3000）
         win.minSize = NSSize(width: 480, height: 400)
+        win.maxSize = NSSize(width: 480, height: 3000)
         win.center()
 
         let vibrancy = NSVisualEffectView(frame: win.contentLayoutRect)
@@ -1261,91 +1775,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lKey.translatesAutoresizingMaskIntoConstraints = false
         hotkeyRow.addArrangedSubview(lKey)
 
-        // 搜索框
-        let search = NSSearchField()
-        search.placeholderString = "搜索软件、快捷键或指令…"
-        search.font = NSFont.systemFont(ofSize: 14)
-        search.target = self
-        search.action = #selector(homeSearchChanged(_:))
-        search.translatesAutoresizingMaskIntoConstraints = false
-
-        // 软件卡片网格（双列）
-        let cardContainer = NSView()
-        cardContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        // 构建卡片列表：已有软件 + 占位卡片
-        var cardList: [(card: SoftwareCardView, searchText: String)] = []
+        // 软件卡片列表：已有软件 + 占位卡片
+        var cardList: [SoftwareCardView] = []
         for guide in guides {
             let card = SoftwareCardView(guide: guide)
-            card.translatesAutoresizingMaskIntoConstraints = false
             card.onCardClick = { [weak self] in self?.showDetail(guide: guide) }
-            cardList.append((card, guide.name.lowercased()))
+            cardList.append(card)
         }
         // 占位卡片
-        let placeholders = ["Altium Designer", "KiCad", "VS Code", "更多软件…"]
+        let placeholders = ["Altium Designer", "KiCad", "VS Code", "更多软件…", "敬请期待", "敬请期待"]
         for name in placeholders {
             let card = SoftwareCardView(placeholderTitle: name)
-            card.translatesAutoresizingMaskIntoConstraints = false
-            cardList.append((card, name.lowercased()))
+            cardList.append(card)
         }
 
-        // 双列网格布局
-        let columnSpacing: CGFloat = 14
-        let rowSpacing: CGFloat = 14
-        let leftCol = NSStackView()
-        leftCol.orientation = .vertical
-        leftCol.spacing = rowSpacing
-        leftCol.translatesAutoresizingMaskIntoConstraints = false
-        let rightCol = NSStackView()
-        rightCol.orientation = .vertical
-        rightCol.spacing = rowSpacing
-        rightCol.translatesAutoresizingMaskIntoConstraints = false
+        // 3列等宽正方形网格（与详情页风格一致）
+        let gridView = HomeSoftwareGridView(cards: cardList)
+        gridView.translatesAutoresizingMaskIntoConstraints = false
 
-        for (i, item) in cardList.enumerated() {
-            if i % 2 == 0 {
-                leftCol.addArrangedSubview(item.card)
-            } else {
-                rightCol.addArrangedSubview(item.card)
-            }
-            item.card.widthAnchor.constraint(equalTo: (i % 2 == 0 ? leftCol : rightCol).widthAnchor).isActive = true
-        }
+        objc_setAssociatedObject(self, "homeCardRefs", cardList.map { ($0 as NSView, "") }, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 
-        let rowStack = NSStackView(views: [leftCol, rightCol])
-        rowStack.orientation = .horizontal
-        rowStack.spacing = columnSpacing
-        rowStack.translatesAutoresizingMaskIntoConstraints = false
-        cardContainer.addSubview(rowStack)
+        // 滚动视图（内容超出窗口时可滚动）
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
 
-        NSLayoutConstraint.activate([
-            rowStack.topAnchor.constraint(equalTo: cardContainer.topAnchor),
-            rowStack.leadingAnchor.constraint(equalTo: cardContainer.leadingAnchor, constant: 20),
-            rowStack.trailingAnchor.constraint(equalTo: cardContainer.trailingAnchor, constant: -20),
-            leftCol.widthAnchor.constraint(equalTo: rightCol.widthAnchor),
-        ])
+        let docView = FlippedView()
+        docView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = docView
 
-        objc_setAssociatedObject(self, "homeCardRefs", cardList.map { ($0.card, $0.searchText) }, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        docView.addSubview(titleLabel)
+        docView.addSubview(subtitleLabel)
+        docView.addSubview(hotkeyRow)
+        docView.addSubview(gridView)
 
-        container.addSubview(titleLabel)
-        container.addSubview(subtitleLabel)
-        container.addSubview(hotkeyRow)
-        container.addSubview(search)
-        container.addSubview(cardContainer)
+        container.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 48),
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            docView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            titleLabel.topAnchor.constraint(equalTo: docView.topAnchor, constant: 48),
+            titleLabel.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            subtitleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            subtitleLabel.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
             hotkeyRow.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 8),
-            hotkeyRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            search.topAnchor.constraint(equalTo: hotkeyRow.bottomAnchor, constant: 14),
-            search.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            search.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            cardContainer.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 16),
-            cardContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            cardContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            cardContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            hotkeyRow.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
+            gridView.topAnchor.constraint(equalTo: hotkeyRow.bottomAnchor, constant: 20),
+            gridView.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 16),
+            gridView.trailingAnchor.constraint(equalTo: docView.trailingAnchor, constant: -16),
+            gridView.bottomAnchor.constraint(equalTo: docView.bottomAnchor, constant: -20),
         ])
+        // 滚动到顶部
+        DispatchQueue.main.async {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: 0))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     @objc private func homeSearchChanged(_ sender: NSSearchField) {
@@ -1399,6 +1890,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for s in guide.sections { tabTitles.append(shortLabel(for: s.title)) }
         let sectionTab = SectionTabView()
         sectionTab.configure(titles: tabTitles)
+        sectionTab.alwaysHighlightTitles = ["SPICE 指令"]
         sectionTab.translatesAutoresizingMaskIntoConstraints = false
         sectionTab.onSelect = { [weak self] idx in
             self?.selectedSection = idx - 1
@@ -1486,6 +1978,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             noResults.centerYAnchor.constraint(equalTo: doc.centerYAnchor),
         ])
         scroll.documentView = doc
+        // 监听滚动视图内容偏移变化，修复滚轮滚动时多个卡片被点亮无法熄灭的bug
+        if let obs = scrollObserver { NotificationCenter.default.removeObserver(obs) }
+        scroll.contentView.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+            self?.updateAllCardHoverStates()
+        }
         NSLayoutConstraint.activate([
             doc.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             doc.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
@@ -1761,6 +2259,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             detailResultLabel?.isHidden = true
         }
         detailNoResults?.isHidden = (visibleCount > 0)
+
+        // 递归查找所有 ComponentGridView 并强制重新布局（搜索过滤后可见卡片变化）
+        func findAndRelayout(_ view: NSView) {
+            if let grid = view as? ComponentGridView {
+                grid.needsLayout = true
+                grid.layoutSubtreeIfNeeded()
+            }
+            for sub in view.subviews {
+                findAndRelayout(sub)
+            }
+        }
+        for container in sectionContainers {
+            findAndRelayout(container)
+        }
     }
 
     // MARK: UI 组件
@@ -1807,6 +2319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         grid.onCardAdded = { [weak self] card, secIdx, text in
             self?.rowRefs.append((view: card, sectionIndex: secIdx, searchText: text))
         }
+        grid.notifyCardsAdded()
         return grid
     }
 
@@ -1915,6 +2428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.setFrameOrigin(NSPoint(x: x, y: y))
         }
         win.makeKeyAndOrderFront(nil)
+        win.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
     }
 
