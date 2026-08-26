@@ -5,6 +5,68 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.4] - 2026-08-26
+
+### LTspice 指南全面重写（基于官方 26 版快捷键速查表 PDF）
+
+对照官方 `LTspice_Keyboard_Shortcuts.pdf`（4 页，Mac 版默认配置），对 `guides/ltspice.md` 进行了全面重写：
+
+**分类重构**（参考官方 PDF 的分类方式）：
+- 放置元件（Place Components）
+- 通用编辑（General Editing，含缩放/撤销/删除/移动/旋转等）
+- 原理图选项（Schematic Options，正交线/离格/隐藏引脚等）
+- 探针操作（Probe Schematic，电压/电流/功率/差分）
+- 仿真控制（Simulator）
+- 波形查看（Waveform Viewing）
+- 波形平移与光标（Waveform Pan & Cursor）
+- 符号编辑器绘图（Drawing）
+- 网表编辑器 / 文本输入框
+- SPICE 分析指令 / SPICE 控制指令
+- 命令行开关 / .OPTIONS 参数
+
+**快捷键修正（Mac 版 ⌘/⌥/⇧）**：
+- 所有 Windows 风格的 Ctrl/Alt 改为 Mac 版 ⌘/⌥（如 ⌘R 旋转、⌥R 运行、⌘Z 撤销、⌘⇧Z 重做）
+- 删除不存在的 `Ctrl+-`（缩放返回）
+- `Shift+Z` 从"缩放返回"修正为"缩小（Zoom Out）"
+- 删除 `Ctrl+V` 粘贴（同一窗口内 Duplicate 模式不需要，⌘V 仅用于跨窗口）
+- 删除 `Ctrl+H` 停止仿真（官方 PDF 中仿真停止为 ⌥S）
+- 补充 `0` 重置仿真波形 T=0
+- 补充 `⌥+左键` 切换指令/注释
+- 补充 `⌘X 或 , 或 Backspace` 删除
+- 波形查看器补充 `P` 上方添加窗格、`⇧S` 选择 Step、`⌘C 或 Esc` 清除光标
+- 波形查看器修正 `⌘+单击轨迹标签`=高亮网络、`⌥+单击轨迹标签`=积分
+- 新增「波形平移与光标」分区，详细列出方向键/修饰键组合的平移和光标跳转行为
+
+**符号编辑器重写**：
+- 删除不准确的快捷键（L=画线、R=画矩形、C=画圆、A=画弧线、P=放置引脚等，这些与原理图编辑器冲突）
+- 改为菜单操作列表（Draw > Line/Rectangle/Ellipse/Arc、Edit > Add Pin/Port 等），用键帽显示菜单路径
+- 标注符号编辑器与原理图编辑器共享单字母快捷键，建议通过菜单访问绘图工具
+
+**SPICE 指令修正与补充**：
+- .TRAN 补充完整参数（uic/steady/nodiscard/startup/step/loadstate/savestate/savestatetime）
+- .AC/.DC/.NOISE 补充 list 和 file= 形式
+- .FOUR 补充 Nharmonics/Nperiods 参数
+- .TF 补充 I(Vsource) 形式
+- .SAVE 补充通配符 `*`/`?` 和层次化 `:` 语法
+- .IC 修正支持的分析类型（.OP/.TRAN/.AC/.NOISE/.TF，.DC 中被忽略）
+- .MODEL 补充完整模型类型列表（D/NPN/PNP/NJF/PJF/NMOS/PMOS/NMF/PMF/SW/CSW/URC/LTRA）
+- .GLOBAL 补充节点 "0" 和 `$G_` 前缀无需声明
+- .SAVEBIAS/.LOADBIAS 标注已被 .SAVESTATE/.LOADSTATE 取代
+- .BACKANNO/.END 标注网表生成器自动添加，勿手动放在原理图上
+- .KEEPNODE 标注主要用于 .NOISE
+- .OPTIONS 参数表基于官方 PDF 第4页全面修正默认值（gminsteps=25、itl2=50、itl6/srcsteps=25、topologycheck=1 等），补充 pivrel/pivtol/maxstep/solver/topologycheck 等参数
+
+**命令行开关补充**：
+- 补充 `-sync`（更新元件库）、`-uninstall`（卸载）
+- `-b` 修正为可组合 -run/-netlist/-sync 的批处理模式
+- 删除不存在的 `-version`（官方 PDF 中无此开关）
+
+**特别注意事项更新**：
+- 补充 verb-noun 操作模式说明
+- 补充 Duplicate 复制不需要 ⌘V
+- 区分画导线按住 ⌘（切换正交）vs 画图形按住 ⌘（禁用网格）
+- 所有快捷键说明改为 Mac 版 ⌘/⌥/⇧
+
 ## [0.3.3] - 2026-08-26
 
 ### UI 改进
