@@ -55,7 +55,7 @@ final class NotesListView: NSView {
             keycap.setFontSize(14)
             keycap.setTintColor(accentColor)
             keycap.translatesAutoresizingMaskIntoConstraints = false
-            keycap.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            keycap.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
             keycap.heightAnchor.constraint(equalToConstant: 30).isActive = true
             row.addArrangedSubview(keycap)
 
