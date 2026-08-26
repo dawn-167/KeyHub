@@ -414,24 +414,37 @@ min_version: 24
 > 通过命令行启动 LTspice 时附加参数，适用于批处理、自动化仿真、CI 集成等场景。
 > macOS 下通过 `open -a LTspice --args <参数>` 或直接调用可执行文件使用。
 
-| 开关 | 功能 |
-|---|---|
-| `-alt` | 设置求解器为 Alternate 模式（可被网表 .OPTIONS 覆盖） |
-| `-ascii` | 使用 ASCII 格式 .raw 文件（人类可读，但严重降低性能和增大文件） |
-| `-b <command>` | 批处理模式，可组合 -run/-netlist/-sync，如 `... -b -run` |
-| `-big` 或 `-max` | 以最大化窗口启动 |
-| `-encrypt` | 加密模型库（第三方库保护，用户可使用但看不到实现细节） |
-| `-FastAccess` | 批量将二进制 .raw 文件转换为 Fast Access 格式（加速大数据波形浏览） |
-| `-FixUpSchematicFonts` | 转换旧版原理图文本字体大小字段为现代默认值 |
-| `-FixUpSymbolFonts` | 转换旧版符号字体大小字段为现代默认值 |
-| `-ini <path>` | 指定使用的 .ini 配置文件路径（替代默认配置） |
-| `-I<path>` | 添加符号/文件搜索路径（必须是最后一个参数，`-I` 和路径间**无空格**） |
-| `-netlist` | 批量将原理图（.asc）转换为 SPICE 网表（.net） |
-| `-norm` | 设置求解器为 Normal 模式（可被网表 .OPTIONS 覆盖） |
-| `-PCBnetlist` | 批量将原理图转换为 PCB 格式网表 |
-| `-run` | 打开命令行指定的原理图后**自动开始仿真** |
-| `-sync` | 更新元件库（Update component libraries） |
-| `-uninstall` | 卸载 LTspice |
+> `-alt`：设置求解器为 Alternate 模式（可被网表 .OPTIONS 覆盖）
+>
+> `-ascii`：使用 ASCII 格式 .raw 文件（人类可读，但严重降低性能和增大文件）
+>
+> `-b <command>`：批处理模式，可组合 -run/-netlist/-sync，如 `... -b -run`
+>
+> `-big / -max`：以最大化窗口启动
+>
+> `-encrypt`：加密模型库（第三方库保护，用户可使用但看不到实现细节）
+>
+> `-FastAccess`：批量将二进制 .raw 文件转换为 Fast Access 格式（加速大数据波形浏览）
+>
+> `-FixUpSchematicFonts`：转换旧版原理图文本字体大小字段为现代默认值
+>
+> `-FixUpSymbolFonts`：转换旧版符号字体大小字段为现代默认值
+>
+> `-ini <path>`：指定使用的 .ini 配置文件路径（替代默认配置）
+>
+> `-I<path>`：添加符号/文件搜索路径（必须是最后一个参数，`-I` 和路径间**无空格**）
+>
+> `-netlist`：批量将原理图（.asc）转换为 SPICE 网表（.net）
+>
+> `-norm`：设置求解器为 Normal 模式（可被网表 .OPTIONS 覆盖）
+>
+> `-PCBnetlist`：批量将原理图转换为 PCB 格式网表
+>
+> `-run`：打开命令行指定的原理图后**自动开始仿真**
+>
+> `-sync`：更新元件库（Update component libraries）
+>
+> `-uninstall`：卸载 LTspice
 
 **语法**：`LTspice.exe -I<path> <schematic.asc> -b -run -ini <path>`
 
