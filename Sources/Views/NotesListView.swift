@@ -5,16 +5,16 @@ import Cocoa
 final class NotesListView: NSView {
     private let gradientLayer = CAGradientLayer()
 
-    init(notes: [String]) {
+    init(notes: [String], accentColor: NSColor = .systemOrange) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.masksToBounds = false
 
-        // 渐变背景
+        // 渐变背景（颜色与序号匹配，低透明度）
         gradientLayer.colors = [
-            NSColor(white: 0.98, alpha: 1.0).cgColor,
-            NSColor(white: 0.95, alpha: 1.0).cgColor
+            accentColor.withAlphaComponent(0.10).cgColor,
+            accentColor.withAlphaComponent(0.06).cgColor
         ]
         gradientLayer.locations = [0, 1]
         gradientLayer.startPoint = CGPoint(x: 0, y: 0)
@@ -22,8 +22,8 @@ final class NotesListView: NSView {
         gradientLayer.cornerRadius = 14
         layer?.addSublayer(gradientLayer)
 
-        // 外阴影
-        layer?.shadowColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        // 外阴影（颜色与序号匹配）
+        layer?.shadowColor = accentColor.withAlphaComponent(0.15).cgColor
         layer?.shadowRadius = 10
         layer?.shadowOpacity = 0.9
         layer?.shadowOffset = NSSize(width: 0, height: 3)
@@ -50,10 +50,10 @@ final class NotesListView: NSView {
             row.spacing = 12
             row.translatesAutoresizingMaskIntoConstraints = false
 
-            // 键帽序号（橙色，与快捷键的浅灰色键帽区分）
+            // 键帽序号（颜色跟随 accentColor）
             let keycap = KeycapView(key: "\(idx + 1)")
             keycap.setFontSize(14)
-            keycap.setTintColor(.systemOrange)
+            keycap.setTintColor(accentColor)
             keycap.translatesAutoresizingMaskIntoConstraints = false
             keycap.widthAnchor.constraint(equalToConstant: 30).isActive = true
             keycap.heightAnchor.constraint(equalToConstant: 30).isActive = true

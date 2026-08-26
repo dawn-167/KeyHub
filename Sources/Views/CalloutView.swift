@@ -9,7 +9,7 @@ final class CalloutView: NSView {
     private var gradientLayer: CAGradientLayer!
     private var highlightLayer: CALayer!
 
-    init(text: String, kind: Kind = .note) {
+    init(text: String, kind: Kind = .note, accentColor: NSColor? = nil) {
         label = NSTextField(wrappingLabelWithString: text)
         super.init(frame: .zero)
         wantsLayer = true
@@ -18,10 +18,14 @@ final class CalloutView: NSView {
         layer?.masksToBounds = false
 
         let accent: NSColor
-        switch kind {
-        case .warning: accent = .systemOrange
-        case .info:    accent = .systemBlue
-        case .note:    accent = .systemGray
+        if let custom = accentColor {
+            accent = custom
+        } else {
+            switch kind {
+            case .warning: accent = .systemOrange
+            case .info:    accent = .systemBlue
+            case .note:    accent = .systemGray
+            }
         }
 
         // 渐变背景（上浅下深，立体感）

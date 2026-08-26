@@ -8,7 +8,9 @@ min_version: 24
 
 # LTspice 快捷键速查表
 
-> 基于 LTspice 26.0.2 默认配置，兼容 24 / 26 版本。
+> 基于 LTspice 26.0.2 **默认配置**，兼容 24 / 26 版本。
+>
+> ⚠️ LTspice 支持自定义快捷键（菜单 **Help > Keyboard Shortcut Cheat Sheet > Edit Keyboard Shortcuts**），以下为出厂默认值。LTspice 自带始终置顶的快捷键速查表窗口，可通过 **Help > Keyboard Shortcut Cheat Sheet** 打开对照。
 
 ## 一、原理图编辑器 — 放置元件
 
@@ -30,22 +32,31 @@ min_version: 24
 | Alt+G | 放置 COM（公共端） |
 
 > **重要**：`.` 放 SPICE 指令、`T` 放注释，两个键分开。`.options tnom=0` 这类指令必须用 `.` 键放置；用 T 放的就是注释，仿真时被忽略。
+>
+> **绘图提示**：用 Draw > Line/Rectangle/Circle/Arc 绘制图形注释时，按住 **Ctrl** 键可临时禁用网格吸附，实现自由定位。
 
 ---
 
 ## 二、原理图编辑器 — 编辑操作
+
+> **三种编辑模式**：
+> - **Expert Mode**（常用）：指向元件值等文本，光标变为 I 型时**右键**直接编辑
+> - **Assisted Mode**：**右键元件体**，弹出 GUI 辅助编辑（适合不确定 SPICE 语法时）
+> - **Super Expert Mode**：按住 **Ctrl + 右键元件体**，完全控制所有属性（可增删属性、设置可见性）
 
 | 快捷键 | 功能 |
 |---|---|
 | Ctrl+R | 旋转元件（Rotate） |
 | Ctrl+E | 镜像翻转（Mirror） |
 | Ctrl+C | 复制模式（Duplicate） |
+| Ctrl+V | 粘贴（Paste，复制后在目标窗口按此键） |
 | Backspace | 删除模式（Delete） |
 | M | 移动模式（Move） |
 | S | 拖拽模式（Stretch / Drag） |
 | Ctrl+Z | 撤销（Undo） |
 | Ctrl+Shift+Z | 重做（Redo） |
 | Esc | 退出当前模式（万能退出） |
+| 右键 | 退出当前模式（Move/Stretch/Delete 等） |
 
 ---
 
@@ -116,6 +127,7 @@ min_version: 24
 | D | 窗格下移（Move Pane Down） |
 | C | 放置轨迹光标（Place Trace Cursor） |
 | Shift+C | 清除所有光标（Clear All Cursors） |
+| 方向键 | 移动附加光标（左/右移动，上/下在多组数据间切换） |
 | L | 标注光标位置（Label Cursor Position） |
 | T | 在图上放置文本（Place Text） |
 | Ctrl+H | 停止仿真（Halt Simulation） |
@@ -127,8 +139,11 @@ min_version: 24
 |---|---|
 | 单击节点 | 绘制该节点电压波形 |
 | 单击元件引脚 | 绘制该支路电流波形 |
-| Alt+单击 | 绘制瞬时功率（Power） |
-| Ctrl+单击 | 绘制平均值（Average） |
+| 单击元件体 | 绘制该元件电流波形 |
+| Alt+单击元件 | 绘制瞬时功率（Power） |
+| Alt+单击导线 | 绘制导线电流（Wire Current） |
+| Ctrl+单击轨迹标签 | 查看该轨迹平均功率/平均值 |
+| 双击同一节点/电流 | 单独显示该轨迹（清除其他所有轨迹） |
 | 拖拽两个节点 | 绘制差分电压（Differential Voltage） |
 | 右键波形标题 | 删除该轨迹 |
 | 鼠标滚轮 | 缩放 |
@@ -177,8 +192,6 @@ min_version: 24
 | .NOISE | 噪声分析 | `.NOISE V(out) V(in) dec 100 1Hz 100MEG` |
 | .FOUR | 傅里叶分析（谐波） | `.FOUR 1k V(out)` |
 | .FRA | 时域频响分析 | `.FRA V(out) V(in)` |
-| .DISTO | 失真分析 | `.DISTO dec 100 1Hz 100MEG` |
-| .SENS | 灵敏度分析 | `.SENS V(out)` |
 | .NET | 网络参数分析（配合 .AC） | `.NET V(out) I(Vin)` |
 
 ### 控制类指令
@@ -456,6 +469,40 @@ type 包括：D（二极管）、NPN/PNP（BJT）、NMOS/PMOS（MOS）、SW/CSW�
 示例：.FUNC myfunc(x) {x*x+1}
 
 可在 .PARAM、元件值、行为源中调用。支持多参数，表达式可用标准 SPICE 函数（sin/cos/exp/log 等）。
+
+### 命令行开关（Command Line Switches）
+
+> 通过命令行启动 LTspice 时可附加参数，适用于批处理、自动化仿真、CI 集成等场景。
+> macOS 下通过 `open -a LTspice --args <参数>` 或直接调用可执行文件使用。
+
+| 参数 | 功能 |
+|---|---|
+| `-b` | 批处理模式运行（如 `ltspice -b deck.cir`，仿真后数据存入 deck.raw，不打开 GUI） |
+| `-netlist` | 批量将原理图（.asc）转换为 SPICE 网表（.net） |
+| `-PCBnetlist` | 批量将原理图转换为 PCB 格式网表 |
+| `-Run` | 打开命令行指定的原理图后**自动开始仿真**，无需手动点 Run |
+| `-big` / `-max` | 以最大化窗口启动 |
+| `-alt` | 设置求解器为 Alternate 模式（可被网表中的 .OPTIONS 覆盖） |
+| `-norm` | 设置求解器为 Normal 模式（可被网表中的 .OPTIONS 覆盖） |
+| `-ascii` | 使用 ASCII 格式 .raw 文件（人类可读，但严重降低性能和增大文件） |
+| `-FastAccess` | 批量将二进制 .raw 文件转换为 Fast Access 格式（加速大数据波形浏览） |
+| `-ini <path>` | 指定使用的 .ini 配置文件路径（替代默认 %APPDATA%/LTspice.ini） |
+| `-I<path>` | 添加符号/文件搜索路径（必须是最后一个参数，`-I` 和路径间**无空格**） |
+| `-encrypt` | 加密模型库（第三方库保护，用户可使用但看不到实现细节） |
+| `-FixUpSchematicFonts` | 转换旧版原理图文本字体大小字段为现代默认值 |
+| `-FixUpSymbolFonts` | 转换旧版符号字体大小字段为现代默认值 |
+
+**常用示例**：
+```bash
+# 批处理仿真（不打开 GUI）
+ltspice -b mycircuit.asc
+
+# 打开原理图并自动开始仿真
+ltspice -Run mycircuit.asc
+
+# 原理图转网表
+ltspice -netlist mycircuit.asc
+```
 
 ---
 

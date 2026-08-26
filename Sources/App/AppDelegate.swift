@@ -25,8 +25,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hoverUpdateTimer: Timer?
 
     private let sectionColors: [NSColor] = [
-        .systemBlue, .systemPurple, .systemGreen, .systemOrange, .systemRed, .systemTeal
+        // 蓝、紫、绿、橙、红、青、靛蓝、粉、棕、薄荷绿、深青 — 11种区分度高的颜色
+        NSColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 1.0),
+        NSColor(red: 0.686, green: 0.322, blue: 0.871, alpha: 1.0),
+        NSColor(red: 0.204, green: 0.780, blue: 0.349, alpha: 1.0),
+        NSColor(red: 1.0, green: 0.584, blue: 0.0, alpha: 1.0),
+        NSColor(red: 1.0, green: 0.231, blue: 0.188, alpha: 1.0),
+        NSColor(red: 0.353, green: 0.784, blue: 0.980, alpha: 1.0),
+        NSColor(red: 0.345, green: 0.337, blue: 0.839, alpha: 1.0),
+        NSColor(red: 1.0, green: 0.176, blue: 0.333, alpha: 1.0),
+        NSColor(red: 0.635, green: 0.518, blue: 0.369, alpha: 1.0),
+        NSColor(red: 0.0, green: 0.776, blue: 0.745, alpha: 1.0),
+        NSColor(red: 0.196, green: 0.678, blue: 0.902, alpha: 1.0)
     ]
+    private let warningColor = NSColor(red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0)  // 特别注意事项：黄色
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -507,7 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for s in guide.sections { tabTitles.append(shortLabel(for: s.title)) }
         let sectionTab = SectionTabView()
         sectionTab.configure(titles: tabTitles)
-        sectionTab.alwaysHighlightTitles = ["SPICE 指令"]
         sectionTab.translatesAutoresizingMaskIntoConstraints = false
         sectionTab.onSelect = { [weak self] idx in
             self?.selectedSection = idx - 1
@@ -546,7 +557,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             container.translatesAutoresizingMaskIntoConstraints = false
             sectionContainers.append(container)
 
-            let color = i < sectionColors.count ? sectionColors[i] : .systemGray
+            let color: NSColor
+            if section.title.contains("注意") {
+                color = warningColor  // 特别注意事项固定黄色
+            } else {
+                color = i < sectionColors.count ? sectionColors[i] : sectionColors[i % sectionColors.count]
+            }
             let header = makeSectionHeader(title: cleanTitle(section.title), count: section.items.count, color: color)
             header.translatesAutoresizingMaskIntoConstraints = false
             container.addArrangedSubview(header)
@@ -560,19 +576,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if section.title.contains("注意") {
-                // 特别注意事项使用新布局（大框+序号+立体分隔线）
-                let notesView = NotesListView(notes: section.notes)
+                // 特别注意事项：大框+序号，序号黄色
+                let notesView = NotesListView(notes: section.notes, accentColor: warningColor)
                 container.addArrangedSubview(notesView)
                 notesView.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
                 rowRefs.append((view: notesView, sectionIndex: i, searchText: section.notes.joined(separator: " ").lowercased()))
-            } else {
-                for note in section.notes {
-                    let callout = CalloutView(text: note, kind: .note)
-                    callout.translatesAutoresizingMaskIntoConstraints = false
-                    container.addArrangedSubview(callout)
-                    callout.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
-                    rowRefs.append((view: callout, sectionIndex: i, searchText: note.lowercased()))
+            } else if !section.notes.isEmpty {
+                // 普通分区：所有 note 合并为一个大框+序号，序号颜色跟随分区主题色
+                let cleanedNotes = section.notes.map { note -> String in
+                    // 去掉内容项前面的 "- " 前缀
+                    note.hasPrefix("- ") ? String(note.dropFirst(2)) : note
                 }
+                let notesView = NotesListView(notes: cleanedNotes, accentColor: color)
+                notesView.translatesAutoresizingMaskIntoConstraints = false
+                container.addArrangedSubview(notesView)
+                notesView.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
+                rowRefs.append((view: notesView, sectionIndex: i, searchText: cleanedNotes.joined(separator: " ").lowercased()))
             }
 
             contentStack.addArrangedSubview(container)

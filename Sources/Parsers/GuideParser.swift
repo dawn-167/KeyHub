@@ -16,6 +16,7 @@ enum GuideParser {
         var frontmatterDone = false
         var currentDetailItem: Int? = nil
         var inOptionsTable = false
+        var inNonShortcutTable = false
 
         for raw in text.components(separatedBy: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
@@ -51,6 +52,7 @@ enum GuideParser {
                 current = SectionData(title: String(line.dropFirst(3)))
                 currentDetailItem = nil
                 inOptionsTable = false
+                inNonShortcutTable = false
                 continue
             }
             if line.hasPrefix("# ") {
@@ -60,6 +62,7 @@ enum GuideParser {
                     current = SectionData(title: t)
                     currentDetailItem = nil
                     inOptionsTable = false
+                    inNonShortcutTable = false
                 }
                 continue
             }
@@ -82,8 +85,17 @@ enum GuideParser {
                 }
                 continue
             }
-            if line.hasPrefix("### ") || line.hasPrefix("## ") || line.hasPrefix("# ") {
+            if line.hasPrefix("### ") {
                 currentDetailItem = nil
+                let subTitle = String(line.dropFirst(4))
+                // 鼠标操作、命令行开关、参数表等不是快捷键表格，跳过解析
+                inNonShortcutTable = subTitle.contains("鼠标操作") || subTitle.contains("命令行") ||
+                                      subTitle.contains("常用参数") || subTitle.contains(".OPTIONS")
+                continue
+            }
+            if line.hasPrefix("## ") || line.hasPrefix("# ") {
+                currentDetailItem = nil
+                inNonShortcutTable = false
             }
             if currentDetailItem != nil && !line.hasPrefix("|") && !line.hasPrefix("```") {
                 // 累积详细说明文本，空行作为段落分隔
@@ -104,6 +116,7 @@ enum GuideParser {
                 continue
             }
             if line.hasPrefix("|") {
+                if inNonShortcutTable { continue }  // 跳过非快捷键表格（鼠标操作、命令行等）
                 guard let cells = tableCells(line), cells.count >= 2 else { continue }
                 let keyCell = cells[0]
                 // 跳过表头和分隔行
@@ -156,6 +169,9 @@ enum GuideParser {
             let keys = part.components(separatedBy: "+")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
+            // 过滤包含中文字符的 combo（如"单击轨迹标签"），这些不是真正的快捷键
+            let cjkSet = CharacterSet(charactersIn: "\u{4e00}"..."\u{9fff}")
+            if keys.contains(where: { $0.rangeOfCharacter(from: cjkSet) != nil }) { continue }
             if !keys.isEmpty { result.append(keys) }
         }
         return result
