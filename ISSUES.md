@@ -1,4 +1,4 @@
-# KeyRef Issue 记录
+# KeyHub Issue 记录
 
 > 问题追踪与处理结果记录
 
@@ -77,14 +77,14 @@
 
 ### ISSUE-009: 菜单栏图标不显示
 - **日期**: 2026-08-24
-- **现象**: KeyRef 启动后菜单栏无图标，用户无法通过菜单栏退出软件
+- **现象**: KeyHub 启动后菜单栏无图标，用户无法通过菜单栏退出软件
 - **根因**: 使用 `keyboard` SF Symbol 在部分系统版本上不可用，且未设置 `isTemplate = true`
 - **修复**: ① 换用 `command` SF Symbol（兼容性更好）；② 设置 `image.isTemplate = true` 确保明暗模式正常显示
 - **验证**: 菜单栏右上角显示键盘图标，点击可弹出菜单（显示/隐藏、软件指南、返回首页、退出）
 
 ### ISSUE-010: 双击已运行的应用不显示窗口
 - **日期**: 2026-08-24
-- **现象**: KeyRef 已在后台运行时，双击 .app 无反应，窗口不弹出
+- **现象**: KeyHub 已在后台运行时，双击 .app 无反应，窗口不弹出
 - **根因**: 无 Dock 图标的 accessory 应用，重新打开时触发 `applicationShouldHandleReopen` 事件，但未处理该事件
 - **修复**: 实现 `applicationShouldHandleReopen` 方法，调用 `showWindow()` 显示并激活窗口
 - **验证**: 应用已运行时双击 .app，窗口正常弹出
@@ -243,7 +243,7 @@
 
 ### ISSUE-029: 新增 SPICE 指令（Dot Commands）参考
 - **日期**: 2026-08-24
-- **现象**: KeyRef 只有快捷键，缺少 LTspice 的 SPICE 指令（.TRAN/.AC/.DC/.OPTIONS 等）参考
+- **现象**: KeyHub 只有快捷键，缺少 LTspice 的 SPICE 指令（.TRAN/.AC/.DC/.OPTIONS 等）参考
 - **根因**: 最初只设计为快捷键速查工具
 - **修复**:
   1. 从 LTspice 官方帮助文档提取完整的 40+ 个 SPICE 指令
@@ -403,7 +403,7 @@
 - **日期**: 2026-08-24
 - **现象**: 窗口几乎全屏，卡片巨大（约600pt），无法缩小到合适大小
 - **原因**:
-  1. autosave name "KeyRefWindow" 记住了之前临时设置的 1200x800 大窗口
+  1. autosave name "KeyHubWindow" 记住了之前临时设置的 1200x800 大窗口
   2. 卡片移除了最大宽度限制，窗口多大卡片就多大
 - **修复**:
   1. 移除 setFrameAutosaveName，窗口不再记住上次大小
