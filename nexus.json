@@ -1,0 +1,27 @@
+{
+  "nexus_version": "1.0",
+  "app": {
+    "name": "KeyHub",
+    "id": "keyhub",
+    "category": "tool",
+    "version": "0.3.0",
+    "description": "多软件快捷键速查工具，全局热键一键唤出",
+    "bundle_id": "com.nexus.tool.keyhub",
+    "url_scheme": "nexus-keyhub",
+    "theme_color": "#007AFF",
+    "hotkey": "Ctrl+Option+L",
+    "min_macos": "13.0"
+  },
+  "commonkit": {
+    "version": "1.0",
+    "components": [
+      "NXHotKeyManager",
+      "NXWindowStyle",
+      "NXStatusItem",
+      "NXPixelUtils",
+      "NXURLScheme"
+    ]
+  },
+  "created": "2026-08-24",
+  "last_updated": "2026-08-26"
+}

@@ -21,5 +21,6 @@
 *.app.dSYM
 *.dSYM/
 
-# KeyHub specific (编译产物不提交)
+# App bundles (编译产物不提交)
+*.app/
 KeyHub.app/
