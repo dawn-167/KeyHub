@@ -5,7 +5,7 @@
 
 ## 简介
 
-KeyHub 是一款 macOS 原生的多软件快捷键速查工具。通过全局热键 `⌃⌥L`（Control+Option+L）一键唤出浮动窗口，快速查阅目标软件的所有快捷键和指令。
+KeyHub 是一款 macOS 原生的多软件快捷键速查工具。通过全局热键 `⌃⌥K`（Control+Option+K）一键唤出浮动窗口，快速查阅目标软件的所有快捷键和指令。
 
 目前支持 LTspice，后续可通过在 `guides/` 目录添加 Markdown 文件扩展更多软件。
 

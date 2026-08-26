@@ -16,7 +16,7 @@ KeyHub 是一款 macOS 原生的多软件快捷键速查工具，最初为 LTspi
 
 ### 1.2 功能特性
 
-- **全局热键唤出**：`⌃⌥L`（Control+Option+L）一键唤出/隐藏，浮动窗口始终置顶
+- **全局热键唤出**：`⌃⌥K`（Control+Option+K）一键唤出/隐藏，浮动窗口始终置顶
 - **多软件支持**：首页卡片式布局，可扩展多个软件的快捷键指南
 - **分类浏览**：按功能分区（放置元件、编辑操作、仿真控制等）tab 切换
 - **实时搜索**：支持快捷键名称和功能描述的模糊搜索
@@ -124,7 +124,7 @@ import Carbon.HIToolbox
 
 // 在 AppDelegate 中注册（使用 Nexus 共享 NXHotKeyManager）
 NXHotKeyManager.register(
-    keyCode: UInt32(kVK_ANSI_L),
+    keyCode: UInt32(kVK_ANSI_K),
     modifiers: UInt32(controlKey) | UInt32(optionKey),
     signature: OSType(0x4B52), // "KR"
     onHotKey: { [weak self] in self?.toggleWindow() }
@@ -142,7 +142,7 @@ NXHotKeyManager.unregister()
 #### 注意事项
 
 1. **修饰键常量**：Carbon 的 `controlKey`、`optionKey` 等是位掩码，需要用 `|` 组合
-2. **键码**：`kVK_ANSI_L` 是字母 L 的虚拟键码，不同键盘布局可能不同
+2. **键码**：`kVK_ANSI_K` 是字母 L 的虚拟键码，不同键盘布局可能不同
 3. **回调必须是全局函数**：Carbon C API 不支持 Swift 实例方法作为回调，需通过 `appDelegateRef` 弱引用桥接到 AppDelegate
 4. **线程切换**：C 回调可能在非主线程调用，UI 操作必须 `DispatchQueue.main.async`
 5. **应用必须运行**：全局热键只在应用运行时有效，需要将应用设为 `LSUIElement`（无 Dock 图标，后台运行）
@@ -950,7 +950,7 @@ KeyHub.app/
 每次修改后，至少验证以下内容：
 
 - [ ] 应用能正常启动，无崩溃
-- [ ] 全局热键 ⌃⌥L 能正常唤出/隐藏
+- [ ] 全局热键 ⌃⌥K 能正常唤出/隐藏
 - [ ] 首页卡片布局正常，无重叠/截断
 - [ ] 点击卡片能进入详情页
 - [ ] 详情页 tab 切换正常

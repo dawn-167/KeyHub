@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupWindow()
         // 使用 Nexus 共享热键管理
         NXHotKeyManager.register(
-            keyCode: UInt32(kVK_ANSI_L),
+            keyCode: UInt32(kVK_ANSI_K),
             modifiers: UInt32(controlKey) | UInt32(optionKey),
             signature: OSType(0x4B52), // "KR"
             onHotKey: { [weak self] in self?.toggleWindow() }
@@ -170,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.imagePosition = .imageOnly
         }
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: "显示 / 隐藏（⌃⌥L）", action: #selector(toggleWindow), keyEquivalent: "")
+        let toggle = NSMenuItem(title: "显示 / 隐藏（⌃⌥K）", action: #selector(toggleWindow), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
         menu.addItem(.separator())
@@ -599,7 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 底部
-        let footer = NSTextField(labelWithString: "⌃⌥L 切换显示 · 菜单栏图标可返回首页 / 退出")
+        let footer = NSTextField(labelWithString: "⌃⌥K 切换显示 · 菜单栏图标可返回首页 / 退出")
         footer.font = NSFont.systemFont(ofSize: 10, weight: .regular)
         footer.textColor = .tertiaryLabelColor
         footer.translatesAutoresizingMaskIntoConstraints = false
