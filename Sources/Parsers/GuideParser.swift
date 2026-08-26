@@ -129,15 +129,20 @@ enum GuideParser {
                 let combos = parseCombo(keyCell)
                 if combos.isEmpty { continue }
                 var desc = cells[1].replacingOccurrences(of: "**", with: "")
-                // 第三列：合并到功能描述（语法示例等）
+                // 第三列：放到详细说明（detail）中，不合并到卡片描述，避免卡片过长跨列
+                var extraDetail = ""
                 if cells.count >= 3 {
                     let third = cells[2].replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
                     if !third.isEmpty {
                         let cleanThird = third.replacingOccurrences(of: "`", with: "")
-                        desc = "\(desc)（\(cleanThird)）"
+                        extraDetail = "常用语法：\(cleanThird)\n\n"
                     }
                 }
-                current?.items.append(ShortcutItem(combos: combos, desc: desc))
+                var item = ShortcutItem(combos: combos, desc: desc)
+                if !extraDetail.isEmpty {
+                    item.detail = extraDetail
+                }
+                current?.items.append(item)
                 continue
             }
             inOptionsTable = false  // 非表格行，重置参数表标记
