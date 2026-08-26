@@ -164,7 +164,7 @@ enum GuideParser {
                 guard let cells = tableCells(line), cells.count >= 2 else { continue }
                 let keyCell = cells[0]
                 // 跳过表头和分隔行
-                if keyCell == "快捷键" || keyCell == "版本" || keyCell == "指令" || keyCell == "参数" ||
+                if keyCell == "快捷键" || keyCell == "版本" || keyCell == "指令" || keyCell == "参数" || keyCell == "操作" ||
                     keyCell.allSatisfy({ $0 == "-" || $0 == ":" }) {
                     if keyCell == "参数" { inOptionsTable = true }
                     continue
@@ -287,6 +287,9 @@ final class KeycapView: NSView {
         label.isSelectable = false
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
+        // 键帽不被压缩，确保文字完整显示
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .vertical)
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
@@ -308,6 +311,15 @@ final class KeycapView: NSView {
         currentFontSize = size
         label.font = NSFont.systemFont(ofSize: size, weight: .semibold)
         invalidateIntrinsicContentSize()
+    }
+
+    func setTintColor(_ color: NSColor) {
+        // 用传入颜色生成渐变：顶部亮30%，底部暗15%
+        let light = color.blended(withFraction: 0.3, of: .white) ?? color
+        let dark = color.blended(withFraction: 0.15, of: .black) ?? color
+        gradientLayer.colors = [light.cgColor, dark.cgColor]
+        layer?.borderColor = dark.withAlphaComponent(0.6).cgColor
+        layer?.shadowColor = dark.withAlphaComponent(0.3).cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -474,13 +486,16 @@ final class CalloutView: NSView {
     enum Kind { case warning, info, note }
     private let label: NSTextField
     private var lastWidth: CGFloat = 0
+    private var gradientLayer: CAGradientLayer!
+    private var highlightLayer: CALayer!
 
     init(text: String, kind: Kind = .note) {
         label = NSTextField(wrappingLabelWithString: text)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.borderWidth = 0.5
+        layer?.cornerRadius = 12
+        layer?.borderWidth = 0
+        layer?.masksToBounds = false
 
         let accent: NSColor
         switch kind {
@@ -488,17 +503,39 @@ final class CalloutView: NSView {
         case .info:    accent = .systemBlue
         case .note:    accent = .systemGray
         }
-        layer?.borderColor = accent.withAlphaComponent(0.22).cgColor
-        layer?.backgroundColor = accent.withAlphaComponent(0.07).cgColor
+
+        // 渐变背景（上浅下深，立体感）
+        gradientLayer = CAGradientLayer()
+        gradientLayer.colors = [
+            accent.withAlphaComponent(0.10).cgColor,
+            accent.withAlphaComponent(0.06).cgColor
+        ]
+        gradientLayer.locations = [0, 1]
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0, y: 1)
+        gradientLayer.cornerRadius = 12
+        layer?.addSublayer(gradientLayer)
+
+        // 顶部高光
+        highlightLayer = CALayer()
+        highlightLayer.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
+        highlightLayer.cornerRadius = 12
+        layer?.addSublayer(highlightLayer)
+
+        // 外阴影（立体感）
+        layer?.shadowColor = accent.withAlphaComponent(0.15).cgColor
+        layer?.shadowRadius = 6
+        layer?.shadowOpacity = 0.8
+        layer?.shadowOffset = NSSize(width: 0, height: 2)
 
         let bar = NSView()
         bar.wantsLayer = true
         bar.layer?.backgroundColor = accent.cgColor
-        bar.layer?.cornerRadius = 1.5
+        bar.layer?.cornerRadius = 2
         bar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bar)
 
-        label.font = NSFont.systemFont(ofSize: 11.5, weight: .regular)
+        label.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         label.textColor = .labelColor
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
@@ -506,24 +543,26 @@ final class CalloutView: NSView {
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            bar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
-            bar.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            bar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            bar.widthAnchor.constraint(equalToConstant: 3),
-            label.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            bar.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            bar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            bar.widthAnchor.constraint(equalToConstant: 4),
+            label.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
     }
 
     override func layout() {
         super.layout()
+        gradientLayer?.frame = bounds
+        highlightLayer?.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
         let w = bounds.width
         if w > 0 && abs(w - lastWidth) > 1 {
             lastWidth = w
-            // 字体随宽度动态缩放（基准宽度600pt，基准字号11.5pt）
-            let fontSize = max(10, min(16, w * 0.019))
+            // 字体随宽度动态缩放（基准宽度448pt，基准字号13pt）
+            let fontSize = max(12, min(18, w * 0.029))
             label.font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
         }
     }
@@ -535,6 +574,153 @@ final class CalloutView: NSView {
 
 final class ClickThroughLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+// MARK: - 渐变背景框（立体感）
+
+final class GradientBoxView: NSView {
+    private let gradientLayer = CAGradientLayer()
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.masksToBounds = false
+        gradientLayer.colors = [
+            NSColor(white: 0.985, alpha: 1.0).cgColor,
+            NSColor(white: 0.955, alpha: 1.0).cgColor
+        ]
+        gradientLayer.locations = [0, 1]
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0, y: 1)
+        gradientLayer.cornerRadius = 14
+        layer?.addSublayer(gradientLayer)
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.1).cgColor
+        layer?.shadowRadius = 8
+        layer?.shadowOpacity = 0.8
+        layer?.shadowOffset = NSSize(width: 0, height: 2)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+    override func layout() {
+        super.layout()
+        gradientLayer.frame = bounds
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+// MARK: - 特别注意事项列表（大框+序号+立体分隔线）
+
+final class NotesListView: NSView {
+    private let gradientLayer = CAGradientLayer()
+
+    init(notes: [String]) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.masksToBounds = false
+
+        // 渐变背景
+        gradientLayer.colors = [
+            NSColor(white: 0.98, alpha: 1.0).cgColor,
+            NSColor(white: 0.95, alpha: 1.0).cgColor
+        ]
+        gradientLayer.locations = [0, 1]
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0, y: 1)
+        gradientLayer.cornerRadius = 14
+        layer?.addSublayer(gradientLayer)
+
+        // 外阴影
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        layer?.shadowRadius = 10
+        layer?.shadowOpacity = 0.9
+        layer?.shadowOffset = NSSize(width: 0, height: 3)
+
+        // 内容栈
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        for (idx, note) in notes.enumerated() {
+            if idx > 0 {
+                let sep = SeparatorView()
+                stack.addArrangedSubview(sep)
+                sep.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 18).isActive = true
+                sep.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -18).isActive = true
+            }
+
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 12
+            row.translatesAutoresizingMaskIntoConstraints = false
+
+            // 键帽序号（橙色，与快捷键的浅灰色键帽区分）
+            let keycap = KeycapView(key: "\(idx + 1)")
+            keycap.setFontSize(14)
+            keycap.setTintColor(.systemOrange)
+            keycap.translatesAutoresizingMaskIntoConstraints = false
+            keycap.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            keycap.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            row.addArrangedSubview(keycap)
+
+            // 文字
+            let label = NSTextField(wrappingLabelWithString: note)
+            label.font = NSFont.systemFont(ofSize: 13.5, weight: .regular)
+            label.textColor = .labelColor
+            label.lineBreakMode = .byWordWrapping
+            label.maximumNumberOfLines = 0
+            label.translatesAutoresizingMaskIntoConstraints = false
+            row.addArrangedSubview(label)
+
+            stack.addArrangedSubview(row)
+            row.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 18).isActive = true
+            row.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -18).isActive = true
+        }
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 18),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
+        ])
+
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    override func layout() {
+        super.layout()
+        gradientLayer.frame = bounds
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+// MARK: - 立体分隔线（上阴影+下高光，模拟凸起）
+
+final class SeparatorView: NSView {
+    private let shadowLine = CALayer()
+    private let highlightLine = CALayer()
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        // 上面深色线（阴影）
+        shadowLine.backgroundColor = NSColor.black.withAlphaComponent(0.1).cgColor
+        layer?.addSublayer(shadowLine)
+        // 下面浅色线（高光）
+        highlightLine.backgroundColor = NSColor.white.withAlphaComponent(0.8).cgColor
+        layer?.addSublayer(highlightLine)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: 2).isActive = true
+    }
+    override func layout() {
+        super.layout()
+        shadowLine.frame = NSRect(x: 0, y: 1, width: bounds.width, height: 0.5)
+        highlightLine.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 0.5)
+    }
+    required init?(coder: NSCoder) { fatalError() }
 }
 
 // MARK: - 手型光标按钮
@@ -565,7 +751,12 @@ final class SectionTabView: NSView {
             let btn = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
             btn.tag = i
             btn.bezelStyle = .inline
+            btn.isBordered = false  // 移除默认bezel边框，完全用layer控制外观
             btn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+            btn.focusRingType = .none  // 移除蓝色焦点环
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 6
+            btn.layer?.masksToBounds = false
             btn.translatesAutoresizingMaskIntoConstraints = false
             addSubview(btn)
             buttons.append(btn)
@@ -597,12 +788,14 @@ final class SectionTabView: NSView {
                 btn.layer?.shadowOffset = NSSize(width: 0, height: 0)
                 btn.layer?.shadowOpacity = 0.6
             } else if isAlwaysHighlight {
-                // 常亮标签：蓝色加粗文字，无背景
-                btn.layer?.backgroundColor = NSColor.clear.cgColor
+                // 常亮标签：淡蓝色背景+蓝色加粗文字，突出显示
+                btn.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
                 btn.contentTintColor = .controlAccentColor
                 btn.font = NSFont.systemFont(ofSize: 12, weight: .bold)
-                btn.layer?.shadowColor = NSColor.clear.cgColor
-                btn.layer?.shadowOpacity = 0
+                btn.layer?.shadowColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+                btn.layer?.shadowRadius = 4
+                btn.layer?.shadowOffset = NSSize(width: 0, height: 0)
+                btn.layer?.shadowOpacity = 0.5
             } else {
                 // 未选中标签：灰色文字
                 btn.layer?.backgroundColor = NSColor.clear.cgColor
@@ -678,8 +871,7 @@ final class ComponentCardView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.masksToBounds = false
-        layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
+        layer?.borderWidth = 0
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.30).cgColor
         layer?.shadowOffset = NSSize(width: 0, height: -6)
         layer?.shadowRadius = 16
@@ -716,21 +908,16 @@ final class ComponentCardView: NSView {
         layer?.insertSublayer(bs, above: grad)
         bottomShadowLayer = bs
 
-        // SPICE指令描边发光层
-        let glowConfigs: [(inset: CGFloat, width: CGFloat, alpha: CGFloat)] = [
-            (inset: -1,  width: 0.6, alpha: 0.90),
-            (inset: -4,  width: 3,   alpha: 0.15),
-        ]
-        for cfg in glowConfigs {
-            let glow = CALayer()
-            glow.frame = bounds.insetBy(dx: cfg.inset, dy: cfg.inset)
-            glow.cornerRadius = 14 - cfg.inset
-            glow.borderWidth = cfg.width
-            glow.borderColor = NSColor.controlAccentColor.withAlphaComponent(cfg.alpha).cgColor
-            glow.opacity = 0
-            layer?.insertSublayer(glow, at: 1)
-            glowLayers.append(glow)
-        }
+        // SPICE指令发光层（用shadow实现光晕，不用border避免非Retina屏黑边）
+        let glow = CALayer()
+        glow.frame = bounds
+        glow.cornerRadius = 14
+        glow.shadowColor = NSColor.controlAccentColor.cgColor
+        glow.shadowRadius = 8
+        glow.shadowOpacity = 0
+        glow.shadowOffset = NSSize(width: 0, height: 0)
+        layer?.insertSublayer(glow, at: 1)
+        glowLayers.append(glow)
 
         // 解析功能描述：中文名（英文名）
         // 注意：SPICE指令可能有两个括号，如"小信号交流分析（频响）（.AC dec 100 1Hz 100MEG）"
@@ -744,36 +931,25 @@ final class ComponentCardView: NSView {
         }
 
         // 动态字体大小：字少的放大，字多的保持，特别长的缩小（确保显示全）
+        // LTspice所有字体统一：键帽14/功能名12/英文名11/加号10
         let comboCount = item.combos.first?.count ?? 0
-        let baseKeycap: CGFloat = isCommand ? 16 : 20
-        let baseName: CGFloat = isCommand ? 14 : 18
-        let baseEn: CGFloat = isCommand ? 12 : 14
-        let basePlus: CGFloat = isCommand ? 12 : 16
+        let baseKeycap: CGFloat = 15
+        let baseName: CGFloat = 13
+        let baseEn: CGFloat = 11
+        let basePlus: CGFloat = 10
         var keycapSize = baseKeycap
         var nameSize = baseName
         var enSize = baseEn
         var plusSize = basePlus
-        // 根据内容长度调整字体（组合键>=2的不放大，只缩小，确保键帽不被截断）
-        if comboCount < 2 && cnName.count <= 2 && comboCount <= 1 && enName.count <= 10 {
-            // 很短，放大2号
-            keycapSize += 4
-            nameSize += 4
-            enSize += 2
-            plusSize += 2
-        } else if comboCount < 2 && cnName.count <= 4 && comboCount <= 2 && enName.count <= 20 {
-            // 中等，放大1号
-            keycapSize += 2
-            nameSize += 2
-            enSize += 1
-            plusSize += 1
-        } else if enName.count > 40 || cnName.count > 10 {
+        // 只缩小不放大：所有内容统一base大小，长内容缩小确保显示全
+        if enName.count > 40 || cnName.count > 10 {
             // 特别长，缩小2号确保显示全
             keycapSize -= 2
             nameSize -= 2
             enSize -= 1
             plusSize -= 1
         } else if enName.count > 10 || cnName.count > 8 {
-            // 较长（11-40字符），缩小1号确保在正方形中显示全
+            // 较长，缩小1号确保在正方形中显示全
             keycapSize -= 1
             nameSize -= 1
             enSize -= 1
@@ -788,9 +964,9 @@ final class ComponentCardView: NSView {
             keycapSize -= 2
             plusSize -= 1
         }
-        // 确保键帽字体不小于10
-        keycapSize = max(keycapSize, 10)
-        plusSize = max(plusSize, 10)
+        // 确保键帽字体不小于9
+        keycapSize = max(keycapSize, 9)
+        plusSize = max(plusSize, 9)
 
         // 键帽（支持组合键，多个键帽并排）
         keyRow.orientation = .horizontal
@@ -821,6 +997,7 @@ final class ComponentCardView: NSView {
         nameLabel.textColor = .labelColor
         nameLabel.alignment = .center
         nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.cell?.wraps = true
         nameLabel.maximumNumberOfLines = 3
         nameLabel.isBezeled = false
         nameLabel.isBordered = false
@@ -833,6 +1010,7 @@ final class ComponentCardView: NSView {
         enLabel.textColor = .secondaryLabelColor
         enLabel.alignment = .center
         enLabel.lineBreakMode = .byTruncatingTail
+        enLabel.cell?.wraps = true
         enLabel.maximumNumberOfLines = 5
         enLabel.isHidden = enName.isEmpty
         enLabel.isBezeled = false
@@ -859,29 +1037,31 @@ final class ComponentCardView: NSView {
         let baseWidth: CGFloat = 200
         let scale = max(0.5, min(2.0, bounds.width / baseWidth))
         let glowWidths: [CGFloat] = [0.6 * scale, 3 * scale]
-        let glowInsets: [CGFloat] = [-1 * scale, -4 * scale]
-        for (i, glow) in glowLayers.enumerated() where i < glowInsets.count {
-            let inset = glowInsets[i]
-            glow.frame = bounds.insetBy(dx: inset, dy: inset)
-            glow.cornerRadius = 14 - inset
-            glow.borderWidth = glowWidths[i]
+        // glow层用shadow实现发光，frame保持bounds
+        for glow in glowLayers {
+            glow.frame = bounds
+            glow.cornerRadius = 14
         }
         // 字体大小固定（27寸副屏最清晰的大小），不随卡片大小变化
         // 手动布局：确保每个元素位置都是整数像素，避免子像素渲染模糊
         let cardW = bounds.width
         let cardH = bounds.height
         let spacing: CGFloat = 10
+        let textWidth = cardW - 24
+        // 设置preferredMaxLayoutWidth，sizeThatFits才能正确计算多行高度
+        nameLabel.preferredMaxLayoutWidth = textWidth
+        enLabel.preferredMaxLayoutWidth = textWidth
         // 计算各元素大小（取整）
         keyRow.layoutSubtreeIfNeeded()
         let keyRowSize = keyRow.fittingSize
-        let keyRowW = round(min(keyRowSize.width, cardW - 24))
+        let keyRowW = round(min(keyRowSize.width, textWidth))
         let keyRowH = round(keyRowSize.height)
-        let nameSize = nameLabel.sizeThatFits(NSSize(width: cardW - 24, height: .greatestFiniteMagnitude))
-        let nameW = cardW - 24
+        let nameSize = nameLabel.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude))
+        let nameW = textWidth
         let nameH = round(nameSize.height)
         var enH: CGFloat = 0
         if !enLabel.isHidden {
-            let enSize = enLabel.sizeThatFits(NSSize(width: cardW - 24, height: .greatestFiniteMagnitude))
+            let enSize = enLabel.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude))
             enH = round(enSize.height)
         }
         // 总高度
@@ -945,10 +1125,8 @@ final class ComponentCardView: NSView {
         highlightLayer?.contentsScale = scale
         bottomShadowLayer?.contentsScale = scale
         glowLayers.forEach { $0.contentsScale = scale }
-        // 边框宽度根据屏幕scale调整，确保物理像素为整数
-        let pixelBorder = 1.0 / scale
-        layer?.borderWidth = pixelBorder
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
+        // 完全移除边框，只用shadow实现立体感
+        layer?.borderWidth = 0
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -985,8 +1163,6 @@ final class ComponentCardView: NSView {
             layer?.transform = CATransform3DMakeTranslation(0, 8, 0)
             layer?.zPosition = 1
             glowLayers.forEach { $0.opacity = 1 }
-            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.9).cgColor
-            layer?.borderWidth = 1
             gradientLayer?.colors = [
                 NSColor.controlBackgroundColor.withAlphaComponent(1.0).cgColor,
                 NSColor.controlBackgroundColor.withAlphaComponent(0.95).cgColor
@@ -1003,8 +1179,6 @@ final class ComponentCardView: NSView {
                 NSColor(white: 0.98, alpha: 1.0).cgColor,
                 NSColor(white: 0.91, alpha: 1.0).cgColor
             ]
-            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
-            layer?.borderWidth = 0.5
             layer?.shadowColor = NSColor.black.withAlphaComponent(0.30).cgColor
             layer?.shadowRadius = 16
             layer?.shadowOffset = NSSize(width: 0, height: -6)
@@ -1069,10 +1243,16 @@ final class ComponentGridView: NSView {
         max((width - CGFloat(cols - 1) * spacing) / CGFloat(cols), 80)
     }
 
-    // 判断卡片是否需要跨两列（长内容）
+    // 判断卡片是否需要跨两列（基于实际内容尺寸精确计算）
     private func shouldSpan(_ card: ComponentCardView) -> Bool {
+        let cw = cardWidth(for: bounds.width)
+        let hPadding: CGFloat = 24
+        let topMargin: CGFloat = 8
+        let elementSpacing: CGFloat = 10
+        let contentWidth = cw - hPadding
+        let contentHeight = cw - topMargin * 2
+
         let desc = card.item.desc
-        // 提取中文名和英文名（用lastIndex，SPICE指令可能有两个括号）
         var cnName = desc
         var enName = ""
         if let lp = desc.lastIndex(of: "（"), let rp = desc.lastIndex(of: "）"), lp < rp {
@@ -1080,11 +1260,78 @@ final class ComponentGridView: NSView {
             enName = String(desc[desc.index(after: lp)..<rp]).trimmingCharacters(in: .whitespaces)
         }
         let comboCount = card.item.combos.first?.count ?? 0
-        // 阈值：包含中文的enName阈值8（中文宽度大），全英文的阈值12
-        let containsChinese = enName.range(of: "\\p{Han}", options: .regularExpression) != nil
-        let enThreshold: CGFloat = containsChinese ? 8 : 12
-        // 组合键>=2的跨列（键帽需要更多宽度）；中文名>6或英文名超阈值也跨列
-        return cnName.count > 6 || comboCount >= 2 || CGFloat(enName.count) > enThreshold
+
+        // 计算实际字体大小（与ComponentCardView一致：只缩小不放大）
+        var keycapSize: CGFloat = 14
+        var nameSize: CGFloat = 12
+        var enSize: CGFloat = 11
+        var plusSize: CGFloat = 10
+        if enName.count > 40 || cnName.count > 10 {
+            keycapSize -= 2; nameSize -= 2; enSize -= 1; plusSize -= 1
+        } else if enName.count > 10 || cnName.count > 8 {
+            keycapSize -= 1; nameSize -= 1; enSize -= 1; plusSize -= 1
+        }
+        if comboCount >= 3 { keycapSize -= 3; plusSize -= 2 }
+        else if comboCount >= 2 { keycapSize -= 2; plusSize -= 1 }
+        keycapSize = max(keycapSize, 9)
+        plusSize = max(plusSize, 9)
+
+        // 计算keyRow宽度
+        let keycapFont = NSFont.systemFont(ofSize: keycapSize, weight: .semibold)
+        let plusFont = NSFont.systemFont(ofSize: plusSize, weight: .semibold)
+        var keyRowWidth: CGFloat = 0
+        if let combo = card.item.combos.first {
+            for (i, key) in combo.enumerated() {
+                let tw = (key as NSString).size(withAttributes: [.font: keycapFont]).width
+                keyRowWidth += max(ceil(tw) + 14, 28)
+                if i < combo.count - 1 {
+                    let pw = ("+" as NSString).size(withAttributes: [.font: plusFont]).width
+                    keyRowWidth += pw + 2
+                }
+            }
+        }
+        // 键帽宽度超过内容宽度，必须跨列
+        if keyRowWidth > contentWidth { return true }
+
+        // 计算keyRow高度
+        let keyRowHeight = max(22, keycapSize * 1.7)
+
+        // 计算功能名高度
+        let nameFont = NSFont.systemFont(ofSize: nameSize, weight: .semibold)
+        let nameRect = (cnName as NSString).boundingRect(
+            with: NSSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: nameFont])
+        let nameHeight = ceil(nameRect.height)
+        // 计算中文行数，超过2行则跨列
+        let nameSingleLineHeight = nameSize * 1.25
+        let nameLineCount = Int(ceil(nameHeight / max(nameSingleLineHeight, 1)))
+        if nameLineCount > 2 { return true }
+
+        // 计算英文名高度
+        var enHeight: CGFloat = 0
+        var enLineCount: Int = 0
+        if !enName.isEmpty {
+            let enFont = NSFont.systemFont(ofSize: enSize, weight: .regular)
+            let enRect = (enName as NSString).boundingRect(
+                with: NSSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: enFont])
+            enHeight = ceil(enRect.height)
+            // 计算英文行数，超过2行则跨列
+            let singleLineHeight = enSize * 1.25
+            enLineCount = Int(ceil(enHeight / max(singleLineHeight, 1)))
+        }
+
+        // 英文部分超过两行，跨列
+        if enLineCount > 2 { return true }
+
+        // 中文+英文总行数>=3，跨列（避免单列太挤）
+        if nameLineCount + enLineCount >= 3 { return true }
+
+        // 总高度
+        let totalHeight = keyRowHeight + elementSpacing + nameHeight + (enHeight > 0 ? elementSpacing + enHeight : 0)
+        return totalHeight > contentHeight
     }
 
     override func layout() {
@@ -1230,6 +1477,7 @@ final class SoftwareCardView: NSButton {
     private var trackingArea: NSTrackingArea?
     private var gradientLayer: CAGradientLayer?
     private var highlightLayer: CALayer?
+    private var rainbowGlowLayer: CAGradientLayer?
     private var nameLabel: ClickThroughLabel!
     private var infoLabel: ClickThroughLabel!
     private var updatedLabel: ClickThroughLabel!
@@ -1255,8 +1503,7 @@ final class SoftwareCardView: NSButton {
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.masksToBounds = false
-        layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        layer?.borderWidth = 0  // 完全移除边框，避免黑边bug
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
         layer?.shadowOffset = NSSize(width: 0, height: -3)
         layer?.shadowRadius = 10
@@ -1279,6 +1526,34 @@ final class SoftwareCardView: NSButton {
         grad.endPoint = CGPoint(x: 0, y: 1)
         layer?.insertSublayer(grad, at: 0)
         gradientLayer = grad
+
+        // 彩虹发光层（背面五彩光，放在背景层下面，柔和光晕+呼吸效果）
+        let rainbow = CAGradientLayer()
+        rainbow.colors = [
+            NSColor(red: 1.0, green: 0.75, blue: 0.75, alpha: 1.0).cgColor,
+            NSColor(red: 1.0, green: 0.88, blue: 0.65, alpha: 1.0).cgColor,
+            NSColor(red: 0.92, green: 1.0, blue: 0.75, alpha: 1.0).cgColor,
+            NSColor(red: 0.75, green: 1.0, blue: 0.85, alpha: 1.0).cgColor,
+            NSColor(red: 0.75, green: 0.92, blue: 1.0, alpha: 1.0).cgColor,
+            NSColor(red: 0.85, green: 0.8, blue: 1.0, alpha: 1.0).cgColor,
+            NSColor(red: 1.0, green: 0.75, blue: 0.75, alpha: 1.0).cgColor
+        ]
+        rainbow.startPoint = CGPoint(x: 0, y: 0)
+        rainbow.endPoint = CGPoint(x: 1, y: 1)
+        rainbow.cornerRadius = 22
+        rainbow.opacity = 0
+        // 高斯模糊：让彩虹层边缘自然过渡，没有硬边界
+        if let blur = CIFilter(name: "CIGaussianBlur") {
+            blur.setValue(10, forKey: "inputRadius")
+            rainbow.filters = [blur]
+        }
+        // 柔和光晕：大半径shadow模拟模糊发光
+        rainbow.shadowColor = NSColor(red: 0.85, green: 0.78, blue: 1.0, alpha: 1.0).cgColor
+        rainbow.shadowRadius = 18
+        rainbow.shadowOpacity = 0.85
+        rainbow.shadowOffset = NSSize(width: 0, height: 0)
+        layer?.insertSublayer(rainbow, below: grad)
+        rainbowGlowLayer = rainbow
 
         // 顶部高光线
         let hl = CALayer()
@@ -1311,18 +1586,28 @@ final class SoftwareCardView: NSButton {
             iconView.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)?.withSymbolConfiguration(config)
             iconView.contentTintColor = .secondaryLabelColor
         } else {
-            iconBg.layer?.backgroundColor = NSColor.systemBlue.cgColor
-            let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .bold)
-            let iconName = guide?.icon ?? "command"
-            iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?.withSymbolConfiguration(config)
-                ?? NSImage(systemSymbolName: "command", accessibilityDescription: nil)?.withSymbolConfiguration(config)
-            iconView.contentTintColor = .white
+            // 优先使用自定义图标（bundle中以软件名命名的png）
+            let customIconName = guide?.name ?? ""
+            if let customImage = NSImage(named: customIconName) {
+                iconBg.layer?.backgroundColor = NSColor.clear.cgColor
+                iconBg.layer?.shadowOpacity = 0
+                iconView.image = customImage
+                iconView.contentTintColor = nil
+            } else {
+                iconBg.layer?.backgroundColor = NSColor.systemBlue.cgColor
+                let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+                let iconName = guide?.icon ?? "command"
+                iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+                    ?? NSImage(systemSymbolName: "command", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+                iconView.contentTintColor = .white
+            }
         }
 
         // 文字
         let nameText = isPlaceholder ? placeholderTitle : (guide?.name ?? "")
         let nameLabel = ClickThroughLabel(labelWithString: nameText)
-        nameLabel.font = NSFont.systemFont(ofSize: 16, weight: .bold)
+        // 艺术字：优先用Impact字体，不存在则用系统粗体
+        nameLabel.font = NSFont(name: "Impact", size: 16) ?? NSFont.systemFont(ofSize: 16, weight: .heavy)
         nameLabel.textColor = isPlaceholder ? .tertiaryLabelColor : .labelColor
         self.nameLabel = nameLabel
 
@@ -1346,28 +1631,28 @@ final class SoftwareCardView: NSButton {
 
         let textStack = NSStackView(views: [nameLabel, infoLabel, updatedLabel])
         textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = 2
+        textStack.alignment = .centerX
+        textStack.spacing = 3
         textStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let hStack = NSStackView(views: [iconBg, textStack])
-        hStack.orientation = .horizontal
-        hStack.alignment = .centerY
-        hStack.spacing = 12
-        hStack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(hStack)
+        let vStack = NSStackView(views: [iconBg, textStack])
+        vStack.orientation = .vertical
+        vStack.alignment = .centerX
+        vStack.spacing = 2
+        vStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(vStack)
 
         NSLayoutConstraint.activate([
-            iconBg.widthAnchor.constraint(equalToConstant: 48),
-            iconBg.heightAnchor.constraint(equalToConstant: 48),
+            iconBg.widthAnchor.constraint(equalToConstant: 64),
+            iconBg.heightAnchor.constraint(equalToConstant: 64),
             iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 28),
-            iconView.heightAnchor.constraint(equalToConstant: 28),
-            hStack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-            hStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            hStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            hStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+            iconView.widthAnchor.constraint(equalToConstant: 48),
+            iconView.heightAnchor.constraint(equalToConstant: 48),
+            vStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            vStack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 6),
+            vStack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 12),
+            vStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
         ])
     }
 
@@ -1375,19 +1660,24 @@ final class SoftwareCardView: NSButton {
         super.layout()
         gradientLayer?.frame = bounds
         highlightLayer?.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
-        // 字体和图标随卡片大小动态缩放
+        // 彩虹发光层比卡片大一圈，从背面透出来
+        rainbowGlowLayer?.frame = bounds.insetBy(dx: -10, dy: -10)
+        // 字体和图标随卡片大小动态缩放（纵向布局）
         let w = bounds.width
         if w > 0 && abs(w - lastCardWidth) > 1 {
             lastCardWidth = w
-            let scale = w / 200  // 基准宽度200pt
-            let nameSize = round(max(11, min(22, 16 * scale)))
-            let infoSize = round(max(8, min(15, 11 * scale)))
-            let updatedSize = round(max(7, min(14, 10 * scale)))
-            let iconSize = round(max(28, min(64, 48 * scale)))
-            let iconInnerSize = round(max(16, min(40, 28 * scale)))
-            nameLabel?.font = NSFont.systemFont(ofSize: nameSize, weight: .bold)
+            let scale = w / 160  // 基准宽度160pt（正方形卡片）
+            let nameSize = round(max(14, min(22, 17 * scale)))
+            let infoSize = round(max(9, min(13, 10 * scale)))
+            let updatedSize = round(max(8, min(12, 9 * scale)))
+            let iconSize = round(max(52, min(80, 64 * scale)))
+            let iconInnerSize = round(max(36, min(60, 48 * scale)))
+            nameLabel?.font = NSFont(name: "Impact", size: nameSize) ?? NSFont.systemFont(ofSize: nameSize, weight: .heavy)
+            nameLabel?.alignment = .center
             infoLabel?.font = NSFont.systemFont(ofSize: infoSize, weight: .regular)
+            infoLabel?.alignment = .center
             updatedLabel?.font = NSFont.systemFont(ofSize: updatedSize, weight: .regular)
+            updatedLabel?.alignment = .center
             // 更新图标大小约束
             if let iconBg = iconBg, let iconView = iconView {
                 for c in iconBg.constraints {
@@ -1433,15 +1723,8 @@ final class SoftwareCardView: NSButton {
         layer?.contentsScale = scale
         gradientLayer?.contentsScale = scale
         highlightLayer?.contentsScale = scale
-        // 边框宽度根据屏幕scale调整
-        let pixelBorder = 1.0 / scale
-        layer?.borderWidth = pixelBorder
-        // 非Retina屏边框颜色调深
-        if scale < 2.0 {
-            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor
-        } else {
-            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
-        }
+        // 完全移除边框，避免黑边bug
+        layer?.borderWidth = 0
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -1479,14 +1762,25 @@ final class SoftwareCardView: NSButton {
         layer?.zPosition = 1
         CATransaction.commit()
         gradientLayer?.colors = [
-            NSColor(red: 0.92, green: 0.96, blue: 1.0, alpha: 1.0).cgColor,
-            NSColor(red: 0.88, green: 0.93, blue: 1.0, alpha: 1.0).cgColor
+            NSColor(white: 1.0, alpha: 1.0).cgColor,
+            NSColor(white: 0.97, alpha: 1.0).cgColor
         ]
-        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
-        layer?.shadowColor = NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor
-        layer?.shadowRadius = 16
-        layer?.shadowOffset = NSSize(width: 0, height: -6)
-        highlightLayer?.backgroundColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        // 彩虹发光效果（固定颜色+柔和光晕+呼吸脉冲）
+        rainbowGlowLayer?.opacity = 0.5
+        // 呼吸脉冲动画：opacity从0.4到0.6循环，模拟发光呼吸
+        let pulseAnim = CABasicAnimation(keyPath: "opacity")
+        pulseAnim.fromValue = 0.4
+        pulseAnim.toValue = 0.6
+        pulseAnim.duration = 2.0
+        pulseAnim.autoreverses = true
+        pulseAnim.repeatCount = .infinity
+        pulseAnim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        rainbowGlowLayer?.add(pulseAnim, forKey: "breathing")
+        layer?.borderWidth = 0
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.25).cgColor
+        layer?.shadowRadius = 12
+        layer?.shadowOffset = NSSize(width: 0, height: -4)
+        highlightLayer?.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -1501,7 +1795,10 @@ final class SoftwareCardView: NSButton {
                NSColor(white: 0.95, alpha: 1.0).cgColor]
             : [NSColor(white: 0.985, alpha: 1.0).cgColor,
                NSColor(white: 0.97, alpha: 1.0).cgColor]
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        // 隐藏彩虹发光
+        rainbowGlowLayer?.opacity = 0
+        rainbowGlowLayer?.removeAnimation(forKey: "breathing")
+        layer?.borderWidth = 0  // 完全移除边框
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
         layer?.shadowRadius = 10
         layer?.shadowOffset = NSSize(width: 0, height: -3)
@@ -1542,6 +1839,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sectionTabs: SectionTabView?
     private var detailResultLabel: NSTextField?
     private var detailNoResults: NSView?
+    private var detailScrollView: NSScrollView?
+    private var detailContentStack: NSStackView?
     private var sectionContainers: [NSView] = []
     private var rowRefs: [(view: NSView, sectionIndex: Int, searchText: String)] = []
     private var selectedSection: Int = -1
@@ -1641,7 +1940,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            let img = NSImage(systemSymbolName: "book.closed", accessibilityDescription: "KeyRef 快捷键手册")?.withSymbolConfiguration(config)
+            let img = NSImage(systemSymbolName: "book.closed", accessibilityDescription: "KeyHub 快捷键手册")?.withSymbolConfiguration(config)
             img?.isTemplate = true
             button.image = img
             button.imagePosition = .imageOnly
@@ -1677,10 +1976,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: 窗口
 
     private func setupWindow() {
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 600),
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 730),
                            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                            backing: .buffered, defer: false)
-        win.title = "KeyRef"
+        win.title = "KeyHub"
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.titlebarSeparatorStyle = .none
@@ -1707,6 +2006,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         vibrancy.autoresizingMask = [.width, .height]
         win.contentView = vibrancy
 
+        // 淡绿色叠加层（正确设置frame）
+        let greenTint = NSView(frame: vibrancy.bounds)
+        greenTint.wantsLayer = true
+        greenTint.layer?.backgroundColor = NSColor(red: 0.75, green: 0.95, blue: 0.80, alpha: 0.15).cgColor
+        greenTint.autoresizingMask = [.width, .height]
+        vibrancy.addSubview(greenTint)
+
         // 容器视图（用于首页/详情页切换）
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -1730,16 +2036,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sectionContainers.removeAll()
         rowRefs.removeAll()
 
-        // 标题
-        let titleLabel = NSTextField(labelWithString: "KeyRef")
-        titleLabel.font = NSFont.systemFont(ofSize: 22, weight: .bold)
+        // 标题（加阴影效果，更有质感）
+        let titleLabel = NSTextField(labelWithString: "KeyHub")
+        titleLabel.font = NSFont(name: "Impact", size: 30) ?? NSFont.systemFont(ofSize: 30, weight: .heavy)
         titleLabel.textColor = .labelColor
+        titleLabel.shadow = NSShadow()
+        titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.15)
+        titleLabel.shadow?.shadowOffset = NSSize(width: 0, height: -1)
+        titleLabel.shadow?.shadowBlurRadius = 2
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // 副标题（带装饰图标）
+        let subtitleRow = NSStackView()
+        subtitleRow.orientation = .horizontal
+        subtitleRow.alignment = .centerY
+        subtitleRow.spacing = 6
+        subtitleRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let sparkleIcon = NSImageView()
+        let sparkleConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        sparkleIcon.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)?.withSymbolConfiguration(sparkleConfig)
+        sparkleIcon.contentTintColor = .systemOrange
+        sparkleIcon.translatesAutoresizingMaskIntoConstraints = false
+        subtitleRow.addArrangedSubview(sparkleIcon)
+
         let subtitleLabel = NSTextField(labelWithString: "多软件快捷键速查")
-        subtitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        subtitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        subtitleRow.addArrangedSubview(subtitleLabel)
 
         // 唤出指令提示（键帽样式）
         let hotkeyRow = NSStackView()
@@ -1748,7 +2072,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyRow.spacing = 4
         hotkeyRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let hotkeyLabel = NSTextField(labelWithString: "唤出：")
+        let hotkeyLabel = NSTextField(labelWithString: "唤出/隐藏：")
         hotkeyLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         hotkeyLabel.textColor = .tertiaryLabelColor
         hotkeyRow.addArrangedSubview(hotkeyLabel)
@@ -1809,7 +2133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scrollView.documentView = docView
 
         docView.addSubview(titleLabel)
-        docView.addSubview(subtitleLabel)
+        docView.addSubview(subtitleRow)
         docView.addSubview(hotkeyRow)
         docView.addSubview(gridView)
 
@@ -1823,9 +2147,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             docView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
             titleLabel.topAnchor.constraint(equalTo: docView.topAnchor, constant: 48),
             titleLabel.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            subtitleLabel.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
-            hotkeyRow.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 8),
+            subtitleRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+            subtitleRow.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
+            hotkeyRow.topAnchor.constraint(equalTo: subtitleRow.bottomAnchor, constant: 10),
             hotkeyRow.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
             gridView.topAnchor.constraint(equalTo: hotkeyRow.bottomAnchor, constant: 20),
             gridView.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 16),
@@ -1859,22 +2183,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         currentGuide = guide
 
         // 返回按钮
-        let backBtn = NSButton(title: "‹ 首页", target: self, action: #selector(goHome))
+        let backBtn = HandCursorButton(title: "‹ 首页", target: self, action: #selector(goHome))
         backBtn.bezelStyle = .inline
         backBtn.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         backBtn.contentTintColor = .controlAccentColor
         backBtn.translatesAutoresizingMaskIntoConstraints = false
 
-        // 软件名 + 版本
+        // 软件名 + 版本（和首页卡片风格一致：图标+Impact艺术字+淡灰色版本信息）
+        // 图标（和首页卡片一样的逻辑：优先用bundle中以软件名命名的png）
+        let iconBg = NSView()
+        iconBg.wantsLayer = true
+        iconBg.layer?.cornerRadius = 12
+        iconBg.translatesAutoresizingMaskIntoConstraints = false
+        let iconView = NSImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let customIconName = guide.name
+        if let customImage = NSImage(named: customIconName) {
+            iconBg.layer?.backgroundColor = NSColor.clear.cgColor
+            iconBg.layer?.shadowOpacity = 0
+            iconView.image = customImage
+            iconView.contentTintColor = nil
+        } else {
+            iconBg.layer?.backgroundColor = NSColor.systemBlue.cgColor
+            let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .bold)
+            iconView.image = NSImage(systemSymbolName: guide.icon, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+                ?? NSImage(systemSymbolName: "command", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+            iconView.contentTintColor = .white
+        }
+        iconBg.addSubview(iconView)
+
+        // 软件名（Impact艺术字，和首页卡片一致）
         let nameLabel = NSTextField(labelWithString: guide.name)
-        nameLabel.font = NSFont.systemFont(ofSize: 18, weight: .bold)
+        nameLabel.font = NSFont(name: "Impact", size: 20) ?? NSFont.systemFont(ofSize: 20, weight: .heavy)
         nameLabel.textColor = .labelColor
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // 版本信息（淡灰色，和首页卡片一致）
         let versionLabel = NSTextField(labelWithString: "v\(guide.version) · 适配 \(guide.minVersion)+ · 更新 \(guide.lastUpdated)")
         versionLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        versionLabel.textColor = .secondaryLabelColor
+        versionLabel.textColor = .tertiaryLabelColor
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // 文字垂直stack
+        let textStack = NSStackView(views: [nameLabel, versionLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        // 图标+文字水平stack
+        let titleStack = NSStackView(views: [iconBg, textStack])
+        titleStack.orientation = .horizontal
+        titleStack.alignment = .centerY
+        titleStack.spacing = 10
+        titleStack.translatesAutoresizingMaskIntoConstraints = false
 
         // 搜索框
         let search = NSSearchField()
@@ -1890,7 +2252,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for s in guide.sections { tabTitles.append(shortLabel(for: s.title)) }
         let sectionTab = SectionTabView()
         sectionTab.configure(titles: tabTitles)
-        sectionTab.alwaysHighlightTitles = ["SPICE 指令"]
         sectionTab.translatesAutoresizingMaskIntoConstraints = false
         sectionTab.onSelect = { [weak self] idx in
             self?.selectedSection = idx - 1
@@ -1912,12 +2273,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        detailScrollView = scroll
 
         let contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 20
         contentStack.translatesAutoresizingMaskIntoConstraints = false
+        detailContentStack = contentStack
 
         for (i, section) in guide.sections.enumerated() {
             let container = NSStackView()
@@ -1940,12 +2303,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 grid.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
             }
 
-            for note in section.notes {
-                let callout = CalloutView(text: note, kind: section.title.contains("注意") ? .warning : .note)
-                callout.translatesAutoresizingMaskIntoConstraints = false
-                container.addArrangedSubview(callout)
-                callout.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
-                rowRefs.append((view: callout, sectionIndex: i, searchText: note.lowercased()))
+            if section.title.contains("注意") {
+                // 特别注意事项使用新布局（大框+序号+立体分隔线）
+                let notesView = NotesListView(notes: section.notes)
+                container.addArrangedSubview(notesView)
+                notesView.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
+                rowRefs.append((view: notesView, sectionIndex: i, searchText: section.notes.joined(separator: " ").lowercased()))
+            } else {
+                for note in section.notes {
+                    let callout = CalloutView(text: note, kind: .note)
+                    callout.translatesAutoresizingMaskIntoConstraints = false
+                    container.addArrangedSubview(callout)
+                    callout.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
+                    rowRefs.append((view: callout, sectionIndex: i, searchText: note.lowercased()))
+                }
             }
 
             contentStack.addArrangedSubview(container)
@@ -1992,8 +2363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         container.addSubview(backBtn)
-        container.addSubview(nameLabel)
-        container.addSubview(versionLabel)
+        container.addSubview(titleStack)
         container.addSubview(search)
         container.addSubview(sectionTab)
         container.addSubview(result)
@@ -2004,12 +2374,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backBtn.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             backBtn.heightAnchor.constraint(equalToConstant: 24),
 
-            nameLabel.topAnchor.constraint(equalTo: backBtn.bottomAnchor, constant: 8),
-            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            versionLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
-            versionLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            // 标题区域（图标+文字）
+            titleStack.topAnchor.constraint(equalTo: backBtn.bottomAnchor, constant: 8),
+            titleStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            iconBg.widthAnchor.constraint(equalToConstant: 40),
+            iconBg.heightAnchor.constraint(equalToConstant: 40),
+            iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 32),
+            iconView.heightAnchor.constraint(equalToConstant: 32),
 
-            search.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 10),
+            search.topAnchor.constraint(equalTo: titleStack.bottomAnchor, constant: 10),
             search.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             search.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
 
@@ -2134,16 +2509,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         container.subviews.forEach { $0.removeFromSuperview() }
 
         // 返回按钮
-        let backBtn = NSButton(title: "‹ 返回", target: self, action: #selector(backToDetail))
+        let backBtn = HandCursorButton(title: "‹ 返回", target: self, action: #selector(backToDetail))
         backBtn.bezelStyle = .inline
         backBtn.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         backBtn.contentTintColor = .controlAccentColor
         backBtn.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = NSTextField(labelWithString: "⚠️ 特别注意事项")
+        // 标题行（图标+文字）
+        let titleRow = NSStackView()
+        titleRow.orientation = .horizontal
+        titleRow.alignment = .centerY
+        titleRow.spacing = 8
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let warningIcon = NSImageView()
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        warningIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(iconConfig)
+        warningIcon.contentTintColor = .systemOrange
+        warningIcon.translatesAutoresizingMaskIntoConstraints = false
+        titleRow.addArrangedSubview(warningIcon)
+
+        let titleLabel = NSTextField(labelWithString: "特别注意事项")
         titleLabel.font = NSFont.systemFont(ofSize: 20, weight: .bold)
         titleLabel.textColor = .labelColor
+        titleLabel.shadow = NSShadow()
+        titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.1)
+        titleLabel.shadow?.shadowOffset = NSSize(width: 0, height: -1)
+        titleLabel.shadow?.shadowBlurRadius = 2
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleRow.addArrangedSubview(titleLabel)
 
         let notesCount = guide.sections.reduce(0) { $0 + $1.notes.count }
         let subtitleLabel = NSTextField(labelWithString: "\(guide.name) · 共 \(notesCount) 条注意事项")
@@ -2157,38 +2551,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
+        // 大框容器（立体感）
+        let containerBox = GradientBoxView()
+
         let contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
-        contentStack.spacing = 12
+        contentStack.spacing = 0
         contentStack.translatesAutoresizingMaskIntoConstraints = false
+        containerBox.addSubview(contentStack)
+
+        // 生成立体分隔线（上深下浅渐变，模拟凹陷）
+        func makeSeparator() -> SeparatorView {
+            return SeparatorView()
+        }
+
+        // 生成圆形序号标签
+        func makeNumberBadge(_ n: Int) -> NSTextField {
+            let badge = NSTextField(labelWithString: "\(n)")
+            badge.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+            badge.textColor = .white
+            badge.alignment = .center
+            badge.backgroundColor = .systemOrange
+            badge.wantsLayer = true
+            badge.layer?.cornerRadius = 10
+            badge.layer?.masksToBounds = true
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            badge.widthAnchor.constraint(equalToConstant: 20).isActive = true
+            badge.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            return badge
+        }
 
         var noteIndex = 1
+        var isFirstItem = true
         for section in guide.sections where !section.notes.isEmpty {
             // 分区标题
             let sectionTitle = NSTextField(labelWithString: cleanTitle(section.title))
-            sectionTitle.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+            sectionTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
             sectionTitle.textColor = .controlAccentColor
             sectionTitle.translatesAutoresizingMaskIntoConstraints = false
+            if !isFirstItem {
+                contentStack.addArrangedSubview(makeSeparator())
+            }
             contentStack.addArrangedSubview(sectionTitle)
+            sectionTitle.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor, constant: 14).isActive = true
+            sectionTitle.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor, constant: -14).isActive = true
+            isFirstItem = false
 
             for note in section.notes {
-                let callout = CalloutView(text: note, kind: .warning)
-                callout.translatesAutoresizingMaskIntoConstraints = false
-                contentStack.addArrangedSubview(callout)
-                callout.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+                // 分隔线
+                contentStack.addArrangedSubview(makeSeparator())
+
+                // 行：序号 + 文字
+                let row = NSStackView()
+                row.orientation = .horizontal
+                row.alignment = .top
+                row.spacing = 10
+                row.translatesAutoresizingMaskIntoConstraints = false
+
+                let badge = makeNumberBadge(noteIndex)
+                row.addArrangedSubview(badge)
+
+                let noteLabel = NSTextField(wrappingLabelWithString: note)
+                noteLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+                noteLabel.textColor = .labelColor
+                noteLabel.lineBreakMode = .byWordWrapping
+                noteLabel.maximumNumberOfLines = 0
+                noteLabel.translatesAutoresizingMaskIntoConstraints = false
+                row.addArrangedSubview(noteLabel)
+
+                contentStack.addArrangedSubview(row)
+                row.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor, constant: 14).isActive = true
+                row.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor, constant: -14).isActive = true
+
                 noteIndex += 1
             }
         }
 
+        // contentStack 在 containerBox 内的约束
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: containerBox.topAnchor, constant: 12),
+            contentStack.leadingAnchor.constraint(equalTo: containerBox.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: containerBox.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: containerBox.bottomAnchor, constant: -12),
+        ])
+
         let doc = NSView()
         doc.translatesAutoresizingMaskIntoConstraints = false
-        doc.addSubview(contentStack)
+        doc.addSubview(containerBox)
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: doc.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 16),
-            contentStack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -16),
-            contentStack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -16),
+            containerBox.topAnchor.constraint(equalTo: doc.topAnchor),
+            containerBox.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 16),
+            containerBox.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -16),
+            containerBox.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -16),
         ])
         scroll.documentView = doc
         NSLayoutConstraint.activate([
@@ -2199,7 +2654,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         container.addSubview(backBtn)
-        container.addSubview(titleLabel)
+        container.addSubview(titleRow)
         container.addSubview(subtitleLabel)
         container.addSubview(scroll)
 
@@ -2207,9 +2662,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backBtn.topAnchor.constraint(equalTo: container.topAnchor, constant: 36),
             backBtn.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             backBtn.heightAnchor.constraint(equalToConstant: 24),
-            titleLabel.topAnchor.constraint(equalTo: backBtn.bottomAnchor, constant: 8),
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            titleRow.topAnchor.constraint(equalTo: backBtn.bottomAnchor, constant: 8),
+            titleRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            subtitleLabel.topAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: 4),
             subtitleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             scroll.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 12),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),

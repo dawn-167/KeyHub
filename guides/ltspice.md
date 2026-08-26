@@ -1,7 +1,7 @@
 ---
 name: LTspice
 version: 26.0.2
-icon: waveform
+icon: cpu
 last_updated: 2026-08
 min_version: 24
 ---

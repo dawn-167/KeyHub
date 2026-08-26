@@ -19,7 +19,7 @@
 *.swiftmodule
 *.swiftdoc
 *.app.dSYM
-
-# KeyRef specific
-KeyRef.app/Contents/MacOS/KeyRef
 *.dSYM/
+
+# KeyHub specific (编译产物不提交)
+KeyHub.app/
