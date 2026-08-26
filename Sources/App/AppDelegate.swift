@@ -373,9 +373,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         plus2.textColor = .tertiaryLabelColor
         hotkeyRow.addArrangedSubview(plus2)
 
-        let lKey = KeycapView(key: "L")
-        lKey.translatesAutoresizingMaskIntoConstraints = false
-        hotkeyRow.addArrangedSubview(lKey)
+        let kKey = KeycapView(key: "K")
+        kKey.translatesAutoresizingMaskIntoConstraints = false
+        hotkeyRow.addArrangedSubview(kKey)
 
         // 软件卡片列表：已有软件 + 占位卡片
         var cardList: [SoftwareCardView] = []
